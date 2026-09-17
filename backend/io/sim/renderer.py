@@ -31,13 +31,53 @@ class RenderService:
         self._vlock = threading.Lock()
         self._requests: queue.Queue = queue.Queue()
         self._stop = False
+        self._resized = False
         # orbit camera for the environment view (MjvCamera, free): lookat / azimuth / elevation / distance
         self.orbit = mujoco.MjvCamera()
         self.orbit.type = mujoco.mjtCamera.mjCAMERA_FREE
         self.orbit.lookat[:] = [0.45, 0.1, 0.3]
         self.orbit.azimuth, self.orbit.elevation, self.orbit.distance = 51.0, -24.0, 2.7
         self._orbit_default = (51.0, -24.0, 2.7, [0.45, 0.1, 0.3])
+        # overlay visibility: each group is a set of geoms that can be hidden without touching physics
+        # (they are all contype/conaffinity 0 annotations), by zeroing their alpha for the render.
+        self._overlay_geoms = self._group_overlays()
+        self._overlay_alpha = {g: float(self.m.geom_rgba[g][3]) for ids in self._overlay_geoms.values() for g in ids}
+        self.overlays = {k: True for k in self._overlay_geoms}
         self._thread = threading.Thread(target=self._loop, name="tron-render", daemon=True)
+
+    def _group_overlays(self) -> dict[str, list[int]]:
+        """One switchable group per annotation, so each zone is its own toggle.
+
+        Floor markings are painted on the slab, not an annotation, so they are never switchable.
+        """
+        groups: dict[str, list[int]] = {}
+        for g in range(self.m.ngeom):
+            name = self.m.geom(g).name or ""
+            if name.startswith("zone_"):
+                groups.setdefault(name[len("zone_"):], []).append(g)
+            elif name.startswith("scanner_"):
+                groups.setdefault(name[len("scanner_"):], []).append(g)
+        return groups
+
+    def set_overlay(self, name: str, visible: bool) -> dict:
+        """Show or hide one overlay group. Visual only -- these geoms never collide."""
+        if name not in self._overlay_geoms:
+            raise KeyError(name)
+        for g in self._overlay_geoms[name]:
+            self.m.geom_rgba[g][3] = self._overlay_alpha[g] if visible else 0.0
+        self.overlays[name] = visible
+        return dict(self.overlays)
+
+    def overlay_state(self) -> dict:
+        """Visibility plus each group's own colour, so the viewer's swatches match the render."""
+        swatches = {}
+        for k, ids in self._overlay_geoms.items():
+            # these geoms take their colour from a material, so geom_rgba is the placeholder default
+            mat = self.m.geom_matid[ids[0]]
+            r, g, b, _a = (float(v) for v in (self.m.mat_rgba[mat] if mat >= 0 else self.m.geom_rgba[ids[0]]))
+            swatches[k] = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+        return {"overlays": dict(self.overlays), "colors": swatches,
+                "counts": {k: len(v) for k, v in self._overlay_geoms.items()}}
 
     def start(self) -> None:
         self._thread.start()
@@ -77,6 +117,21 @@ class RenderService:
         with self._vlock:
             return list(self._viewers) or [self.camera]
 
+    def resize(self, width: int, height: int) -> dict:
+        """Ask for a different render size, within the model's offscreen framebuffer.
+
+        The viewport is sized by the browser window, so rendering at a fixed shape leaves bars on one
+        axis. The client reports its panel size and the render loop picks the change up on its next
+        pass."""
+        max_w = int(self.m.vis.global_.offwidth)
+        max_h = int(self.m.vis.global_.offheight)
+        w = max(320, min(int(width), max_w))
+        h = max(240, min(int(height), max_h))
+        if (w, h) != (self.width, self.height):
+            self.width, self.height = w, h
+            self._resized = True
+        return {"width": self.width, "height": self.height, "max": [max_w, max_h]}
+
     # ------------------------------------------------------------------ thread
     def _loop(self) -> None:
         rd = mujoco.MjData(self.m)
@@ -84,6 +139,10 @@ class RenderService:
         period = 1.0 / self.fps
         next_t = time.perf_counter()
         while not self._stop:
+            if self._resized:                      # the viewport changed shape
+                self._resized = False
+                renderer.close()
+                renderer = mujoco.Renderer(self.m, height=self.height, width=self.width)
             # on-demand requests first
             try:
                 while True:

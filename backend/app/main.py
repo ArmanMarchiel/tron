@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
@@ -47,7 +47,21 @@ app = FastAPI(title="TRON - Cyber-Physical Digital Twin", lifespan=lifespan)
 app.include_router(build_router(platform, sessions, auth))
 
 FRONTEND = ROOT / "frontend"
-app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
+
+
+class _NoCacheStatic(StaticFiles):
+    """Serve the UI without caching.
+
+    This is a development UI edited in place; a browser holding an old ES module or stylesheet makes
+    changes look like they never landed. Revalidating every request costs nothing on localhost."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-store, must-revalidate"
+        return resp
+
+
+app.mount("/static", _NoCacheStatic(directory=str(FRONTEND)), name="static")
 
 
 @app.get("/healthz")
@@ -58,4 +72,13 @@ def healthz():
 
 @app.get("/")
 def index():
-    return FileResponse(str(FRONTEND / "index.html"))
+    """Serve the shell with a build stamp on its assets.
+
+    ES modules and stylesheets cache hard; without a changing query a browser keeps serving an old
+    module graph after the files on disk change. The stamp is the newest mtime under frontend/, so it
+    moves exactly when the UI does and stays stable otherwise."""
+    html = (FRONTEND / "index.html").read_text()
+    stamp = int(max(f.stat().st_mtime for f in FRONTEND.rglob("*") if f.is_file()))
+    html = html.replace("/static/app.css", f"/static/app.css?v={stamp}")
+    html = html.replace("/static/app.js", f"/static/app.js?v={stamp}")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

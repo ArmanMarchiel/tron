@@ -16,6 +16,7 @@ from backend.app.config import DATA_DIR, ROBOT_ID, SAFETY, SECURITY, SIM
 from backend.pipeline.events.event_model import EventType, Source, make_event
 from backend.conf.registry import RobotProfile, get_robot
 from backend.conf.scenarios.loader import load_scenario
+from backend.conf.machines import get_machine
 from backend.conf.scenarios.schema import Scenario
 from backend.io.sim.compose import compose
 from backend.io.sim.ik import bake
@@ -38,22 +39,42 @@ def scenario_targets(sc: Scenario) -> dict[str, list[float]]:
     if sc.machine:
         mp, co = sc.machine.pose, sc.machine.chuck_offset
         chuck = [mp[0] + co[0], mp[1] + co[1], mp[2] + co[2]]
+        # geometry-dependent approach points, derived from the machine's own profile so a different
+        # machine moves them with it
+        prof = get_machine(sc.machine.ref)
+        front_x = mp[0] + prof.front_offset          # the machine's front face
+        # the lift above the part must stay under the door header, or the arm clips the enclosure
+        # on its way in; the margin leaves room for the links that ride above the tool
+        clear_top = prof.door.get("clear_top")
+        lift_max = (mp[2] + clear_top - 0.20) - chuck[2] if clear_top else 0.22
         for h in offsets:
             suffix = f"+{h:g}" if h else ""
             t[f"machine.chuck{suffix}"] = [chuck[0], chuck[1], chuck[2] + h]
-            t[f"machine.chuck_above{suffix}"] = [chuck[0], chuck[1], chuck[2] + 0.22 + h]
-        t["machine.door_frame"] = [mp[0] - 0.19, mp[1] - 0.05, 0.40]   # into the closed door panel
-        t["machine.front"] = [mp[0] - 0.42, mp[1], 0.40]                # retract point in front of the door, clear of the side walls
-        t["machine.obstacle"] = [mp[0] - 0.02, mp[1] + 0.20, 0.05]        # into the machine bed beside the chuck (always present)
+            t[f"machine.chuck_above{suffix}"] = [chuck[0], chuck[1], chuck[2] + min(0.22 + h, max(0.06, lift_max))]
+        t["machine.door_frame"] = [front_x + 0.02, mp[1] - 0.05, chuck[2] - 0.04]   # into the closed door panel
+        t["machine.front"] = [max(front_x - 0.22, 0.30), mp[1], chuck[2] - 0.04]    # retract point clear of the door
+        t["machine.obstacle"] = [chuck[0] - 0.02, chuck[1] + 0.16, chuck[2] - 0.06]  # into the machine bed beside the chuck
     return t
 
 
-def scenario_environment(sc: Scenario) -> dict:
+def scenario_environment(sc: Scenario, robot=None) -> dict:
+    zones = []
+    for z in sc.zones:
+        d = z.model_dump()
+        if z.type == "restricted_while" and not z.min and sc.machine:
+            # bounds omitted: guard the machine's own enclosed working volume
+            d["min"], d["max"] = get_machine(sc.machine.ref).interior_bounds(sc.machine.pose)
+        if z.type == "reach_envelope":
+            # resolve the envelope against the robot actually loaded, so the twin tests the same
+            # cylinder the scene draws
+            d["radius"] = z.radius or ((robot.reach_m if robot else 0.85) + z.margin_m)
+            d["height"] = z.height or d["radius"]
+        zones.append(d)
     return {
         "scenario": sc.id,
         "obstacles": [{"id": b.id, "pos": b.pose, "size": [b.size] * 3} for b in sc.blocks if b.mass >= 2.0],
         "humans": [{"id": sc.human.id, "x": sc.human.pose[0], "y": sc.human.pose[1], "z": sc.human.pose[2]}] if sc.human else [],
-        "zones": [z.model_dump() for z in sc.zones],
+        "zones": zones,
         "sensors": [s.model_dump() for s in sc.sensors],
         "machine": sc.machine.model_dump() if sc.machine else None,
     }
@@ -75,10 +96,15 @@ class SessionManager:
         p.adapter = None
         time.sleep(0.15)
 
-    def start(self, robot_id: str, scenario_id: str, adapter: str = "mujoco", fresh_db: bool = True) -> dict:
+    def start(self, robot_id: str, scenario_id: str, adapter: str = "mujoco", fresh_db: bool = True,
+              machine: str | None = None) -> dict:
         self.stop()
         robot = get_robot(robot_id)
         sc = load_scenario(scenario_id)
+        if machine and sc.machine and machine != sc.machine.ref:
+            # run this scenario against a different machine tool; the scenario file is untouched
+            get_machine(machine)                      # fail fast on an unknown id
+            sc.machine.ref = machine
         session_id = f"{robot_id}_{scenario_id}_{uuid.uuid4().hex[:6]}"
         scene = compose(robot, sc, session_id)
         import mujoco
@@ -104,13 +130,14 @@ class SessionManager:
         identity = robot.identity()
         identity["limits"]["tracking_notice"] = safety["joint_tracking_notice_rad"]
         identity["limits"]["tracking_alert"] = safety["joint_tracking_alert_rad"]
-        p.configure(db, identity, scenario_environment(sc), safety, security, sc.faults)
+        p.configure(db, identity, scenario_environment(sc, robot), safety, security, sc.faults)
         try:
             from backend.pipeline.twin.shadow_sim import ShadowSim
             p.state.shadow = ShadowSim(scene, robot)
         except Exception:
             p.state.shadow = None
-        self.current = {"id": session_id, "robot": robot_id, "scenario": scenario_id, "adapter": adapter, "scene": str(scene),
+        self.current = {"id": session_id, "robot": robot_id, "scenario": scenario_id, "adapter": adapter,
+                        "machine": sc.machine.ref if sc.machine else None, "scene": str(scene),
                         "db": db, "started_at": time.time(), "targets": {k: v["ee"] for k, v in wp.items()}}
         p.session = self.current
         p.store.append(make_event(EventType.SessionStarted, Source.OPERATOR, ROBOT_ID,

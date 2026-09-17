@@ -116,10 +116,10 @@ def collision(twin: dict, cfg: dict) -> Hit | None:
 def sensor_divergence(twin: dict, cfg: dict) -> Hit | None:
     d = twin["divergence"]
     J = _joints(twin)
-    # area scanner: person physically in the field, sensor silent
-    sc = twin["sensors"]["area_scanner"]
+    # area scanner (when the cell has one): person physically in the field, sensor silent
+    sc = twin["sensors"].get("area_scanner") or {}
     p = twin["physical"]
-    if p.get("human_in_scanner_field") and sc.get("intrusion") is False and sc.get("ts") is not None:
+    if sc and p.get("human_in_scanner_field") and sc.get("intrusion") is False and sc.get("ts") is not None:
         since = p.get("human_in_field_since")
         if since is not None and (twin["ts"] or 0) - since >= cfg["scanner_miss_s"]:
             return Hit("SENSOR_STATE_DIVERGENCE", "CRITICAL", "safety",

@@ -77,10 +77,17 @@ def bake(scene_path: Path, robot, targets: dict[str, list[float]], cache_key: st
     out: dict[str, dict] = {}
     prev = ik.home
     for name, tgt in targets.items():
+        # Seeding from the previous solve keeps consecutive waypoints on a continuous branch, but a
+        # target the arm cannot reach leaves `prev` contorted and poisons every later solve.  Retry
+        # from home (and keep whichever seed did better) so one bad target stays local.
         q, err = ik.solve(tgt, q0=prev)
+        if err > 0.002:
+            q_home, err_home = ik.solve(tgt, q0=ik.home)
+            if err_home < err:
+                q, err = q_home, err_home
         ee = ik.fk(q)
         out[name] = {"q": [round(float(x), 5) for x in q], "ee": [round(float(x), 4) for x in ee], "err": round(err, 5)}
-        prev = q
+        prev = q if err <= 0.002 else ik.home
     out["home"] = {"q": [float(x) for x in robot.home], "ee": [round(float(x), 4) for x in ik.fk(robot.home)], "err": 0.0}
     cache.write_text(json.dumps(out, indent=1))
     return out

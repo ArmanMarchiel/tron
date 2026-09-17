@@ -15,9 +15,11 @@ class Tray(BaseModel):
 class Block(BaseModel):
     id: str
     pose: list[float]
-    size: float = 0.03          # half-size (m)
+    size: float = 0.03          # half-size (m); cylinder uses it as the radius
     mass: float = 0.5
     finished: bool = False
+    shape: Literal["box", "cylinder"] = "box"
+    height: float | None = None  # cylinder half-height (m); defaults to `size` when unset
 
 
 class Machine(BaseModel):
@@ -42,13 +44,19 @@ class Human(BaseModel):
 
 class Zone(BaseModel):
     id: str
-    type: Literal["restricted", "restricted_while", "reduced_speed", "ssm"]
-    min: list[float]
-    max: list[float]
+    type: Literal["restricted", "restricted_while", "reduced_speed", "ssm", "reach_envelope"]
+    min: list[float] = Field(default_factory=list)
+    max: list[float] = Field(default_factory=list)
     condition: str | None = None          # e.g. "machine.state == RUNNING"
     max_tcp_speed: float | None = None    # reduced_speed
     min_separation: float | None = None   # ssm base separation (m)
     stop_time_s: float = 0.5              # ssm: separation grows with tcp speed * stop_time
+    # --- reach_envelope: the volume the arm can physically reach, centred on its base ---
+    radius: float | None = None           # defaults to the robot profile's reach_m + margin_m
+    margin_m: float = 0.15                # safeguarded space extends past the arm's own envelope
+    height: float | None = None           # defaults to the radius (a cylinder around the base)
+    protective_stop: bool = True          # a human inside must stop the robot
+    stop_within_s: float = 0.5            # ... within this long
 
 
 class Sensor(BaseModel):
@@ -76,6 +84,7 @@ class Step(BaseModel):
 
 class Task(BaseModel):
     loop: bool = True
+    cycles: int | None = None   # stop after this many completed cycles (None = run forever)
     steps: list[Step]
 
 

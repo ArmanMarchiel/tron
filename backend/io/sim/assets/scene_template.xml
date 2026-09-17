@@ -2,15 +2,14 @@
   <compiler angle="radian" autolimits="true"/>
   <option timestep="0.002" integrator="implicitfast"/>
   <visual>
-    <headlight diffuse="0.7 0.7 0.7" ambient="0.4 0.4 0.4" specular="0.1 0.1 0.1"/>
+    <headlight diffuse="0.85 0.85 0.85" ambient="0.62 0.62 0.62" specular="0.08 0.08 0.08"/>
     <rgba haze="0.9 0.92 0.95 1"/>
-    <global azimuth="140" elevation="-25" offwidth="960" offheight="640"/>
+    <global azimuth="140" elevation="-25" offwidth="1600" offheight="900"/>
     <quality shadowsize="4096"/>
   </visual>
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.93 0.95 0.98" rgb2="0.75 0.8 0.88" width="512" height="3072"/>
-    <texture type="2d" name="floor_tex" builtin="checker" mark="edge" rgb1="0.82 0.84 0.87" rgb2="0.72 0.75 0.79" markrgb="0.9 0.9 0.9" width="300" height="300"/>
-    <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="6 6" reflectance="0.1"/>
+    <material name="floor_mat" rgba="0.36 0.38 0.41 1" reflectance="0" specular="0.05" shininess="0.1"/>
     <material name="tray_mat" rgba="0.3 0.34 0.4 1"/>
     <material name="block_raw" rgba="0.62 0.64 0.68 1"/>
     <material name="block_finished" rgba="0.82 0.7 0.35 1"/>
@@ -20,6 +19,8 @@
     <material name="human_helmet" rgba="0.95 0.85 0.1 1"/>
     <material name="zone_mat" rgba="0.9 0.2 0.2 0.15"/>
     <material name="zone_speed" rgba="0.95 0.6 0.1 0.12"/>
+    <material name="zone_reach" rgba="0.25 0.55 0.95 0.10"/>
+    <material name="zone_reach_stop" rgba="0.95 0.15 0.15 0.22"/>
     <material name="scanner_mat" rgba="0.2 0.5 0.9 0.12"/>
     <material name="cnc_body" rgba="0.85 0.86 0.88 1"/>
     <material name="cnc_bed" rgba="0.45 0.47 0.5 1"/>
@@ -28,14 +29,26 @@
     <material name="cnc_spindle" rgba="0.6 0.62 0.65 1"/>
     <material name="cnc_door" rgba="0.55 0.6 0.66 1"/>
     <material name="cnc_window" rgba="0.6 0.75 0.9 0.5"/>
+    <!-- Haas livery: light grey sheet metal over a dark charcoal base, red trim and badge -->
+    <material name="haas_shell" rgba="0.78 0.79 0.80 1"/>
+    <material name="haas_base" rgba="0.28 0.30 0.32 1"/>
+    <material name="haas_dark" rgba="0.38 0.40 0.43 1"/>
+    <material name="haas_red" rgba="0.78 0.11 0.13 1"/>
+    <material name="haas_panel" rgba="0.20 0.22 0.25 1"/>
+    <material name="haas_screen" rgba="0.15 0.45 0.35 1"/>
+    <material name="haas_glass" rgba="0.55 0.68 0.78 0.42"/>
+    <material name="haas_chip" rgba="0.33 0.35 0.38 1"/>
+    <material name="floor_line" rgba="0.93 0.76 0.06 1"/>       <!-- painted aisle marking -->
     <material name="beacon_idle" rgba="0.4 0.9 0.4 1"/>
     <material name="pedestal_mat" rgba="0.5 0.52 0.56 1"/>
+__MACHINE_ASSETS__
   </asset>
   <worldbody>
-    <light pos="0.5 0.5 2.0" dir="-0.3 -0.3 -1" directional="true" castshadow="true"/>
-    <light pos="-1 1 1.5" dir="0.5 -0.5 -1" directional="false" diffuse="0.4 0.4 0.4"/>
+    <light pos="0.5 0.5 2.0" dir="-0.3 -0.3 -1" directional="true" castshadow="false" diffuse="0.5 0.5 0.5"/>
+    <light pos="-1 1 1.5" dir="0.5 -0.5 -1" directional="true" diffuse="0.35 0.35 0.35" castshadow="false"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="floor_mat" pos="0 0 -__PEDESTAL__"/>
-    <geom name="pedestal" type="cylinder" size="0.12 __PEDESTAL_HALF__" pos="0 0 -__PEDESTAL_HALF__" material="pedestal_mat"/>
+    <geom name="pedestal" type="cylinder" size="0.16 __PEDESTAL_HALF__" pos="0 0 -__PEDESTAL_HALF__" material="pedestal_mat"/>
+    <geom name="pedestal_foot" type="box" size="0.30 0.30 0.03" pos="0 0 -__PEDESTAL_FOOT__" material="haas_base"/>
     <body name="cam_target" pos="0.5 0.2 0.25"/>
     <camera name="twin_cam" pos="1.9 -1.5 1.0" mode="targetbody" target="cam_target" fovy="42"/>
     <camera name="top_cam" pos="0.5 0.2 2.6" xyaxes="0 1 0 -1 0 0" fovy="60"/>

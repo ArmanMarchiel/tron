@@ -2,36 +2,41 @@ id: cnc_tending
 name: CNC machine tending
 description: Unload a finished part from the CNC when its cycle completes, load a raw block, clamp, close the door and start the next cycle. An operator works alongside the cell.
 targets:
-  rogue: [0.30, 0.72, 0.45]
+  rogue: [0.28, 0.62, 0.20]     # a lunge toward the operator lane (fault B)
 trays:
-  - {id: raw_tray, pose: [0.28, -0.5, -0.01], slots: [[-0.1, 0.0], [0.0, 0.0], [0.1, 0.0]]}
-  - {id: finished_tray, pose: [0.28, 0.5, -0.01], slots: [[-0.1, 0.0], [0.0, 0.0], [0.1, 0.0]]}
+  - {id: raw_tray, pose: [0.0, -0.46, -0.1], slots: [[-0.12, 0.0], [-0.04, 0.0], [0.04, 0.0], [0.12, 0.0]]}
+  - {id: finished_tray, pose: [-0.02, 0.46, -0.1], slots: [[-0.12, 0.0], [-0.04, 0.0], [0.04, 0.0], [0.12, 0.0]]}
+# Raw stock is square; a finished part is a turned cylinder, so the output of the CNC is
+# recognisable at a glance -- four raw blocks in, four cylinders out.
 blocks:
-  - {id: raw-1, pose: [0.18, -0.5, 0.03], size: 0.03, mass: 0.6}
-  - {id: raw-2, pose: [0.28, -0.5, 0.03], size: 0.03, mass: 0.6}
-  - {id: raw-3, pose: [0.38, -0.5, 0.03], size: 0.03, mass: 0.6}
-  - {id: part-0, pose: [0.78, 0.0, 0.115], size: 0.03, mass: 0.5, finished: true}
+  - {id: raw-1, pose: [-0.12, -0.46, -0.06], size: 0.03, mass: 0.6}
+  - {id: raw-2, pose: [-0.04, -0.46, -0.06], size: 0.03, mass: 0.6}
+  - {id: raw-3, pose: [0.04, -0.46, -0.06], size: 0.03, mass: 0.6}
+  - {id: raw-4, pose: [0.12, -0.46, -0.06], size: 0.03, mass: 0.6}
+  - {id: part-0, pose: [0.742, 0.0, -0.108], size: 0.028, height: 0.032, mass: 0.5, finished: true, shape: cylinder}
 machine:
   id: cnc-1
-  ref: cnc_vmc_small
-  pose: [0.84, 0.0, 0.0]
+  ref: haas_vf2_cad              # backend/conf/machines/machines.yaml (manufacturer CAD)
+  pose: [1.3620, 0.0, -1.05]     # origin at floor level; front face 0.2 m from the robot riser
   cycle_time_s: 12
-  chuck_offset: [-0.06, 0.0, 0.11]
+  chuck_offset: [-0.62, 0.0, 0.942]  # vise on the CAD table, inside the door
   protocol: simulated
   allowed_clients: [/motion_planner, cell_plc]
 human:
-  pose: [0.3, 1.4, 0.2]
+  # the operator works the aisle outside the painted cell boundary, never through the machine
+  pose: [-0.6, 2.47, 0.2]
   behaviour: operator_patrol
-  patrol: [[0.2, 1.4], [1.0, 1.4]]
+  patrol: [[-1.05, 2.47], [2.72, 2.47]]
   speed: 0.3
 zones:
-  - {id: cnc_interior, type: restricted_while, min: [0.66, -0.32, 0.0], max: [1.02, 0.32, 0.85], condition: "machine.state == RUNNING"}
-  - {id: collab_front, type: reduced_speed, min: [-0.2, 0.62, 0.0], max: [1.4, 1.0, 1.2], max_tcp_speed: 0.25}
-  - {id: operator_side, type: ssm, min: [-0.5, 0.6, 0.0], max: [1.6, 1.8, 2.0], min_separation: 0.45, stop_time_s: 0.4}
-sensors:
-  - {id: scanner-1, type: area_scanner, field_min: [-0.3, 0.6, 0.0], field_max: [1.5, 1.2, 0.0], protective_stop: true, stop_within_s: 0.5}
+  # The arm's range of motion. An operator inside it must stop the robot (auto-resume on exit).
+  - {id: robot_rom, type: reach_envelope, protective_stop: true, stop_within_s: 0.5}
+  # bounds omitted: resolved from the machine profile's enclosed working volume
+  - {id: cnc_interior, type: restricted_while, condition: "machine.state == RUNNING"}
+sensors: []
 task:
   loop: true
+  cycles: 4          # four raw blocks -> four finished parts, then the run ends
   steps:
     - {id: wait_cycle,  action: wait, precondition: "machine.state == COMPLETE", timeout_s: 40, duration_s: 12, on_fail: open_door}
     - {id: open_door,   action: machine, command: door_open, expect: "machine.door == OPEN", duration_s: 3}
@@ -66,6 +71,5 @@ faults:
   D: {name: Trajectory deviation, expected_detection: TRAJECTORY_DIVERGENCE, description: "Joints 2 and 4 lose 95% of position gain; the arm sags under gravity.", params: {actuator_gain_scale: 0.05, joints: [1, 3]}, duration_s: 10}
   E: {name: Collision, expected_detection: COLLISION_EVENT, description: "Planner goal placed into the machine bed beside the chuck with the collision check disabled; the gripper drives into the bed.", params: {goal: machine.obstacle, disable_collision_check: true}, duration_s: 12}
   F: {name: Machine state spoof, expected_detection: MACHINE_STATE_MISMATCH, description: "The planner's copy of the machine state is spoofed to COMPLETE while the spindle is still RUNNING; the robot opens the door and enters the interior.", params: {machine_state_spoof: COMPLETE}, duration_s: 20}
-  G: {name: Operator intrusion, expected_detection: PROTECTIVE_STOP_OBSERVED, description: "The operator walks into the scanner field while the arm moves; the safety PLC must issue a protective stop.", params: {human_behaviour: operator_intrusion}, duration_s: 14}
-  H: {name: Scanner blind, expected_detection: SENSOR_STATE_DIVERGENCE, description: "The area scanner stops reporting intrusions while the operator walks into its field; no protective stop follows.", params: {human_behaviour: operator_intrusion, scanner_blind: true}, duration_s: 14}
+  G: {name: Operator intrusion, expected_detection: PROTECTIVE_STOP_OBSERVED, description: "The operator walks into the robot's range of motion while the arm moves; the cell must issue a protective stop and resume once they are clear.", params: {human_behaviour: operator_intrusion}, duration_s: 14}
   I: {name: Unexpected load, expected_detection: UNEXPECTED_LOAD, description: "A 3 kg mass is attached to the wrist without the planner's knowledge; joint torques diverge from the shadow model.", params: {extra_payload_kg: 3.0}, duration_s: 12}

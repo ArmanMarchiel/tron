@@ -18,3 +18,13 @@ log/
 .DS_Store
 .idea/
 *.swp
+
+# ---- vendor CAD sources (inputs, not artifacts) ----
+# Manufacturer STEP/Parasolid/.prt downloads, ~230 MB and redistributed under Haas' terms rather
+# than this repo's. The MuJoCo meshes they produce ARE tracked, under backend/io/sim/assets/<machine>/,
+# so nothing here is needed to run the cell -- only to re-import a machine. To regenerate, drop the
+# vendor STEP back into backend/cad/ and run, e.g.:
+#   python backend/scripts/cad_machine.py backend/cad/haas-st10/ST-10.STEP --name haas_st10 --yaw -90
+# The --yaw values that orient each machine's door toward the robot are recorded in
+# backend/conf/machines/machines.yaml alongside the dimensions measured off the assembled shell.
+backend/cad/

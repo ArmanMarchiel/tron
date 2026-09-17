@@ -29,6 +29,29 @@ real ROS 2 collector (rclpy)   ─┘        SQLite            history / timelin
 The physics engine is **MuJoCo** (runs natively on macOS, no GPU required). The robot is the
 **Franka Emika Panda** 7-DoF arm from MuJoCo Menagerie, placed on a pedestal in a workcell with a
 table, a fixed obstacle, a human proxy and a restricted zone (`backend/io/sim/assets/scene.xml`).
+
+The cell is built around a **Haas VF-2** vertical machining centre modelled at true scale from the
+published Haas Machine Layout Drawing (3147 mm wide x 2249 mm deep, 1742 mm enclosure, 939 mm door
+opening, 914 x 356 mm table, 762/406/508 mm travels). The robot stands on a riser in front of the
+doors so the vise falls inside its envelope, as a real tending cell is laid out.
+
+The cell sits on a sealed slate shop floor with a painted yellow boundary enclosing the machine and
+the robot's envelope; the operator patrols the aisle outside it, so a walking route never crosses the
+machine. The boundary is derived from the cell's contents, not authored, so it follows a machine swap.
+Annotation layers -- zones, the robot ROM, the scanner field and the floor markings -- can each be
+switched off from the viewer (`GET`/`POST /api/sim/overlays`); they are visual only and never collide.
+
+Machines are swappable: `backend/conf/machines/machines.yaml` names each model's MJCF, chuck offset,
+door travel and working volume, and a scenario selects one with `machine: {ref: haas_vf2}`. Adding a
+machine is a registry entry plus an MJCF fragment that exposes the same contract (a `cnc_machine`
+body, `cnc_door_joint`, `cnc_jaw_*_joint` and a `cnc_chuck_site`). `GET /api/machines` lists them.
+
+The CNC cell runs a finite job: four raw blocks go in, four finished parts come out, and the run then
+reaches a terminal state (`task.cycles` in the scenario; omit it to run continuously). Raw stock is
+square and a finished part is a turned cylinder, so the machine's output is recognisable on sight.
+The arm's range of motion is drawn as a translucent cylinder sized from the robot's own `reach_m`
+plus a margin; an operator inside it is a protective stop in its own right, independent of the area
+scanner, and the arm resumes the step it was on once they step clear.
 An in-process motion planner runs a pick/place cycle through joint-space waypoints baked with IK
 (`backend/io/sim/bake_waypoints.py` → `waypoints.json`), executed by a minimum-jerk joint-trajectory
 controller. The offscreen renderer streams the scene to the UI at 15 fps and can render the twin's
@@ -149,6 +172,7 @@ backend/
     scenarios/  loader.py · schema.py · defs/*.yaml
     cells/      <cell>.yaml: robot + scenario + thresholds + allow-lists
     registry/   robots.yaml: supported arms
+    machines/   machines.yaml: supported machine tools (Haas VF-2, generic VMC)
     security/   auth.py · baseline.py
   scripts/      run.sh · tron_cli.py · obj_to_msh.py
   data/         runtime output, gitignored: tron.sqlite · scenes/ · sessions/ · waypoints/

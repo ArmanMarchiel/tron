@@ -1,11 +1,10 @@
 // TRON web UI entry: live WebSocket twin stream, tabbed sidebar, history mode via timeline scrubbing.
-import { initSimView, renderSimView, setSimMode } from "./robot/simview.js";
+import { initSimView, setSimMode, refreshOverlays } from "./robot/simview.js";
 import { renderRobotState } from "./robot/state_panel.js";
 import { renderExpectedActual } from "./twin/expected_actual.js";
 import { renderSoftware } from "./twin/software_panel.js";
 import { initScenarios, renderFaultStatus, renderTask, loadScenarioDoc, reloadFaults } from "./risk/scenarios.js";
 import { initTimeline, timelineTick, setTimelineMode, timelineShown } from "./timeline/timeline.js";
-import { initIncidents, refreshIncidents, onLiveEvent as incidentsOnEvent, selectIncidentAt } from "./incidents/incidents.js";
 
 export const app = { mode: "live", liveTwin: null, viewTwin: null, fault: null, historyTs: null, feed: [], tab: "state", connected: false, session: null };
 
@@ -23,7 +22,6 @@ function renderStatusLine(twin) {
 
 function renderAll(twin) {
   if (!twin) return;
-  renderSimView($("joint-bars"), twin);
   renderStatusLine(twin);
   renderRobotState($("robot-state"), twin);
   renderExpectedActual($("expected-actual"), twin);
@@ -49,7 +47,6 @@ export async function viewAt(ts) {
     setTimelineMode("history", ts);
     setSimMode("history", ts);
     renderAll(app.viewTwin);
-    selectIncidentAt(ts);
   } catch (e) { console.warn(e); }
 }
 
@@ -74,7 +71,7 @@ function connect() {
       if (msg.session && (!app.session || msg.session.id !== app.session.id)) { app.session = msg.session; onSessionChanged(); }
       renderFaultStatus(app.fault);
       if (app.mode === "live") { app.viewTwin = app.liveTwin; renderAll(app.viewTwin); }
-    } else if (msg.type === "event") { pushFeed(msg.data); incidentsOnEvent(msg.data); }
+    } else if (msg.type === "event") { pushFeed(msg.data); }
   };
 }
 
@@ -87,30 +84,42 @@ document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
 });
 
 async function initPickers() {
-  const [robots, scenarios] = await Promise.all([api("/registry/robots"), api("/scenarios")]);
+  const [robots, scenarios, machines] = await Promise.all([
+    api("/registry/robots"), api("/scenarios"), api("/machines").catch(() => [])]);
   $("pick-robot").innerHTML = robots.map(r => `<option value="${r.id}">${r.name}</option>`).join("");
   $("pick-scenario").innerHTML = scenarios.map(s => `<option value="${s.id}">${s.name || s.id}</option>`).join("");
+  $("pick-machine").innerHTML = machines.map(m => `<option value="${m.id}">${m.name || m.id}</option>`).join("");
+  $("pick-machine").style.display = machines.length ? "" : "none";
   $("btn-apply").onclick = async () => {
+    const btn = $("btn-apply");
+    btn.disabled = true;
     $("session-info").textContent = "loading cell…";
-    const r = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ robot: $("pick-robot").value, scenario: $("pick-scenario").value }) });
-    $("session-info").textContent = r.ok ? "" : "failed: " + (await r.text()).slice(0, 120);
+    try {
+      const r = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ robot: $("pick-robot").value, scenario: $("pick-scenario").value, machine: $("pick-machine").value || null }) });
+      if (!r.ok) { $("session-info").textContent = "failed: " + (await r.text()).slice(0, 120); return; }
+      // Apply the new session straight away. Waiting for the twin stream to mention it is racy:
+      // the adapter takes a moment to start publishing, so the view could sit on the old cell.
+      app.session = await r.json();
+      onSessionChanged();
+    } finally {
+      btn.disabled = false;
+    }
   };
 }
 function onSessionChanged() {
   const s = app.session; if (!s) return;
   $("pick-robot").value = s.robot; $("pick-scenario").value = s.scenario;
+  if (s.machine) $("pick-machine").value = s.machine;
   $("session-info").textContent = s.adapter === "mujoco" ? "" : s.adapter;
   app.feed = []; setSimMode("live", null, true);
-  loadScenarioDoc(s.scenario); reloadFaults(); refreshIncidents();
-}
+  refreshOverlays();                      // zone toggles belong to the newly composed model
+  loadScenarioDoc(s.scenario); reloadFaults(); }
 initPickers();
 $("btn-live").onclick = setLive;
 $("event-feed").innerHTML = `<h2>Live event feed</h2><div class="feed dim">waiting for events…</div>`;
 initSimView($("viz-tabs"));
 initScenarios($("scenarios"));
 initTimeline($("timeline"), viewAt, setLive);
-initIncidents($("incident-list"), $("incident-detail"), viewAt);
 connect();
 setInterval(() => { if (app.liveTwin) timelineTick(app); }, 1000);
-setInterval(refreshIncidents, 3000);
-refreshIncidents();

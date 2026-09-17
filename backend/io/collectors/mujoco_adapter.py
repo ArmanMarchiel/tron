@@ -23,6 +23,7 @@ import mujoco
 import numpy as np
 
 from backend.pipeline.events.event_model import EventType, make_event
+from backend.conf.machines import get_machine
 from backend.io.machines.cnc import DOOR_OPEN_POS, CNCMachine
 from backend.conf.registry import RobotProfile
 from backend.io.sim.human import HumanOperator
@@ -81,8 +82,13 @@ class MujocoAdapter:
             if p in arm_bodies and i not in arm_bodies and self.m.body(i).name.startswith(("tron_finger", "left_finger", "right_finger")):
                 arm_bodies.add(i)
         self.arm_geoms = [g for g in range(self.m.ngeom) if self.m.geom_bodyid[g] in arm_bodies and (self.m.geom_contype[g] or self.m.geom_conaffinity[g])]
+        # What counts as "the robot hit something".  The vise jaws are excluded: loading and
+        # unloading the machine means reaching between them, so brushing a jaw is the job, not a
+        # crash.  The part itself is handled by the grasp logic, not here.
         self.obstacle_geoms = {g: self.m.geom(g).name for g in range(self.m.ngeom)
-                               if self.m.geom(g).name.startswith(OBSTACLE_GEOM_PREFIXES) and self.m.geom(g).name not in ("cnc_door_window",)}
+                               if self.m.geom(g).name.startswith(OBSTACLE_GEOM_PREFIXES)
+                               and self.m.geom(g).name not in ("cnc_door_window", "cnc_door2_window")
+                               and not self.m.geom(g).name.startswith("cnc_jaw_")}
         self.block_bodies = {blk.id: self.m.body(blk.id).id for blk in scenario.blocks}
         self.prox_bodies = sorted(arm_bodies)[-6:]
         # Menagerie grippers squeeze with ~3 N; scale the tendon actuator so a 0.6 kg block can be held (real Panda: 70 N)
@@ -104,10 +110,19 @@ class MujocoAdapter:
         self.machine = None
         self.machine_adapter = None
         if scenario.machine:
-            self.machine = CNCMachine(scenario.machine.id, scenario.machine.cycle_time_s, scenario.machine.allowed_clients, part_loaded=True)
+            prof = get_machine(scenario.machine.ref)
+            self.machine = CNCMachine(scenario.machine.id, scenario.machine.cycle_time_s,
+                                      scenario.machine.allowed_clients, part_loaded=True,
+                                      door_travel=prof.door.get("travel"), jaw_clamped=prof.jaw_clamped)
             self.machine_adapter = MachineAdapter(ingest, self.machine, robot_id, scenario.machine.protocol)
             self.door_q = self.m.jnt_qposadr[self.m.joint("cnc_door_joint").id]
             self.door_d = self.m.jnt_dofadr[self.m.joint("cnc_door_joint").id]
+            # twin-door machines (the VF-2) carry a second panel that mirrors the driven one
+            try:
+                j2 = self.m.joint("cnc_door2_joint")
+                self.door2_q, self.door2_d = self.m.jnt_qposadr[j2.id], self.m.jnt_dofadr[j2.id]
+            except KeyError:
+                self.door2_q = self.door2_d = None
             self.jaw_q = [self.m.jnt_qposadr[self.m.joint(j).id] for j in ("cnc_jaw_l_joint", "cnc_jaw_r_joint")]
             self.jaw_d = [self.m.jnt_dofadr[self.m.joint(j).id] for j in ("cnc_jaw_l_joint", "cnc_jaw_r_joint")]
             self.chuck_site = self.m.site("cnc_chuck_site").id
@@ -120,8 +135,17 @@ class MujocoAdapter:
         self.speed_factor = 1.0
         self.reached_since: float | None = None
         self.protective_stop = False
+        self.pstop_source: str | None = None       # "scanner" | "reach_envelope"
         self._pstop_hold: np.ndarray | None = None
         self._pstop_since: float | None = None
+        # the arm's range of motion: a human inside it must stop the robot
+        self.reach_zone = next((z for z in scenario.zones if z.type == "reach_envelope"), None)
+        # the safeguarded space is the arm's reach plus a margin, as a real cell is guarded
+        self.reach_radius = (self.reach_zone.radius if self.reach_zone and self.reach_zone.radius
+                             else getattr(robot, "reach_m", 0.85) + (self.reach_zone.margin_m if self.reach_zone else 0.0))
+        self.reach_height = (self.reach_zone.height if self.reach_zone and self.reach_zone.height
+                             else self.reach_radius)
+        self.human_in_reach = False
         self.task = TaskRunner(self, scenario)
         # faults
         self.fault: dict | None = None
@@ -423,10 +447,14 @@ class MujocoAdapter:
             self._cmd_count += 1
 
     def _controller_step(self, now: float) -> tuple[float, str]:
-        # safety PLC: sensed intrusion -> protective stop (freeze targets)
-        if self.sensed_intrusion and self.scanner and self.scanner.protective_stop:
+        # safety PLC: a sensed scanner intrusion, or a human inside the arm's range of motion,
+        # freezes the targets where they are.  Both resume the same way once the cell is clear.
+        scanner_trip = bool(self.sensed_intrusion and self.scanner and self.scanner.protective_stop)
+        reach_trip = bool(self.human_in_reach and self.reach_zone and self.reach_zone.protective_stop)
+        if scanner_trip or reach_trip:
             if not self.protective_stop:
                 self.protective_stop, self._pstop_since = True, now
+                self.pstop_source = "reach_envelope" if reach_trip else "scanner"
                 self._pstop_hold = self.q().copy()
                 if self.traj:
                     self.traj["pstop_tau"] = (now - self.traj["start"]) / (self.traj["duration"] / self.speed_factor)
@@ -435,6 +463,7 @@ class MujocoAdapter:
             return (self.traj and min(1.0, self.traj.get("pstop_tau", 0.0))) or 0.0, "protective_stop"
         if self.protective_stop:
             self.protective_stop = False
+            self.pstop_source = None
             if self.traj:   # resume with phase continuity
                 self.traj["start"] = now - self.traj.get("pstop_tau", 0.0) * (self.traj["duration"] / self.speed_factor)
         if self.traj is None:
@@ -466,6 +495,9 @@ class MujocoAdapter:
             step = min(abs(tgt - cur), 0.3 * dt)
             self.d.qpos[self.door_q] = cur + math.copysign(step, tgt - cur) if abs(tgt - cur) > 1e-6 else tgt
             self.d.qvel[self.door_d] = 0.0
+            if self.door2_q is not None:      # the opposite panel slides the same distance
+                self.d.qpos[self.door2_q] = self.d.qpos[self.door_q]
+                self.d.qvel[self.door2_d] = 0.0
             self.machine.set_door_position(float(self.d.qpos[self.door_q]))
             for qa, da in zip(self.jaw_q, self.jaw_d):
                 self.d.qpos[qa] = self.machine.jaw_target
@@ -480,6 +512,19 @@ class MujocoAdapter:
     def _scanner_reading(self) -> bool:
         truth = self.human.feet_in_field() if self.human else False
         return False if self.scanner_blind else truth
+
+    def _human_in_reach(self) -> bool:
+        """True while the operator stands inside the arm's range of motion.
+
+        The envelope is a cylinder about the robot base at the origin, so this is a radial test in xy
+        plus a height test -- the same volume drawn in the scene.
+        """
+        if not (self.human and self.reach_zone):
+            return False
+        x, y, z = self.human.position()
+        if not (0.0 <= z <= self.reach_height + 1.2):      # a standing operator, feet near the floor
+            return False
+        return float(np.hypot(x, y)) <= self.reach_radius
 
     # ------------------------------------------------------------------ emitters
     def _due(self, key: str, hz: float, now: float) -> bool:
@@ -514,6 +559,7 @@ class MujocoAdapter:
                     if sim_t - last_ctrl >= 0.02:   # 50 Hz control
                         last_ctrl = sim_t
                         self.sensed_intrusion = self._scanner_reading()
+                        self.human_in_reach = self._human_in_reach()
                         self.task.step(now)
                         if self._rogue_active and self._due("rogue", self.fault["params"].get("rate_hz", 10.0), now):
                             self._rogue_step(now)
@@ -564,6 +610,8 @@ class MujocoAdapter:
                     "collision": self.collision, "collision_with": self.collision_with,
                     "nearest_obstacle_distance": round(d_obs, 4), "nearest_human_distance": (round(d_hum, 4) if d_hum is not None else None),
                     "human_in_field": in_field, "protective_stop": self.protective_stop,
+                    "protective_stop_source": self.pstop_source,
+                    "human_in_reach_envelope": self.human_in_reach,
                     "gripper": float(self.d.ctrl[self.grip_id]), "held": self.held,
                     "payload_kg": round(float(self.m.body_mass[self.ee_body] - self.tool_mass0 + self.held_mass()), 2)})])
             if self._due("env", 2.0, now):
@@ -596,6 +644,9 @@ class TaskRunner:
         self.override: dict | None = None
         self.checks_disabled = False
         self._dwell_until = 0.0
+        self.cycles_done = 0
+        self.cycles_target = scenario.task.cycles      # None -> run until stopped
+        self.finished_at: float | None = None
 
     # ---------------------------------------------------------------- targets
     def resolve(self, target: str, height_offset: float = 0.0) -> tuple[str, np.ndarray]:
@@ -645,6 +696,8 @@ class TaskRunner:
 
     # ---------------------------------------------------------------- execution
     def step(self, now: float) -> None:
+        if self.status == "done":       # the run is finished: dispatch nothing further
+            return
         if self.a._rogue_active:
             return
         if self.override:
@@ -694,8 +747,13 @@ class TaskRunner:
     def _start_next(self, now: float) -> None:
         self.index += 1
         if self.index >= len(self.steps):
-            if not self.sc.task.loop:
-                self.status = "done"
+            # wrapping past the last step means one part went through the whole cycle
+            self.cycles_done += 1
+            self.a.ingest([make_event(EventType.TaskCycleCompleted, ROS, self.a.robot_id,
+                                      {"scenario": self.sc.id, "cycle": self.cycles_done,
+                                       "cycles_target": self.cycles_target})])
+            if not self.sc.task.loop or (self.cycles_target is not None and self.cycles_done >= self.cycles_target):
+                self._complete_run(now)
                 return
             self.index = 0
         s = self.steps[self.index]
@@ -707,7 +765,8 @@ class TaskRunner:
             dur = max(dur, 1.875 * float(np.max(np.abs(q - self.a.q()))) / 0.6)   # the planner's time-parameterised duration
         payload = {"scenario": self.sc.id, "step": s.id, "index": self.index, "action": s.action, "target": s.target, "command": s.command,
                    "duration_s": round(dur, 2), "nominal_duration_s": s.duration_s, "timeout_s": s.timeout_s, "precondition": s.precondition, "expect": s.expect,
-                   "machine_belief": self.a.machine_view(), "source_node": "/motion_planner"}
+                   "machine_belief": self.a.machine_view(), "source_node": "/motion_planner",
+                   "cycles_done": self.cycles_done, "cycles_target": self.cycles_target}
         self.a.ingest([make_event(EventType.TaskStepStarted, ROS, self.a.robot_id, payload)])
         if s.action == "move":
             grip = None
@@ -736,6 +795,21 @@ class TaskRunner:
                 self.a.machine_adapter.command(s.command, "/motion_planner", now)
         elif s.action == "wait":
             pass
+
+    def _complete_run(self, now: float) -> None:
+        """Every requested cycle is done: park the runner so no further steps are dispatched."""
+        self.status = "done"
+        self.cur = None
+        self.finished_at = now
+        self.a.traj = None
+        self.a.ingest([make_event(EventType.TaskRunCompleted, ROS, self.a.robot_id,
+                                  {"scenario": self.sc.id, "cycles_completed": self.cycles_done,
+                                   "cycles_target": self.cycles_target})])
+
+    def view(self) -> dict:
+        """What the UI and the twin report about task progress."""
+        return {"cycles_done": self.cycles_done, "cycles_target": self.cycles_target,
+                "done": self.status == "done", "finished_at": self.finished_at}
 
     def _emit_goal(self, key: str, q: np.ndarray, duration: float, now: float, note: str | None = None) -> None:
         ee = self.a.wp.get(key, {}).get("ee")

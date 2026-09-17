@@ -69,7 +69,7 @@ class AnomalyEngine:
             self.store.append(make_event(EventType.SafetyThresholdExceeded, Source.PLATFORM, twin["identity"]["robot_id"], {
                 "rule": "PROTECTIVE_STOP_OBSERVED", "severity": "LOW", "category": "safety", "informational": True, "first": True,
                 "message": "Controller issued a protective stop after a sensed scanner intrusion",
-                "evidence": {"scanner": twin["sensors"]["area_scanner"], "controller_state": twin["software"]["controller"].get("state")}}, 1.0, ts))
+                "evidence": {"scanner": twin["sensors"].get("area_scanner"), "controller_state": twin["software"]["controller"].get("state")}}, 1.0, ts))
         if not twin["physical"].get("protective_stop"):
             self._pstop_reported = False
         # risk summary on the twin

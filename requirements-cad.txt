@@ -1,0 +1,5 @@
+# Optional: CAD import (backend/scripts/cad_import.py).
+# Only needed to convert STEP/IGES into meshes; the platform itself does not import these.
+cascadio>=0.1          # OpenCascade STEP/IGES -> tessellated glTF
+trimesh>=4.0           # mesh handling and STL export
+scipy>=1.11            # trimesh mesh validation

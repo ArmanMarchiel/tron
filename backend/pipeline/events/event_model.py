@@ -43,6 +43,8 @@ class EventType(StrEnum):
     TaskStepStarted = "TaskStepStarted"
     TaskStepCompleted = "TaskStepCompleted"
     TaskStepFailed = "TaskStepFailed"
+    TaskCycleCompleted = "TaskCycleCompleted"    # one part finished end to end
+    TaskRunCompleted = "TaskRunCompleted"        # every requested cycle is done
     MachineStateObserved = "MachineStateObserved"
     MachineCommandReceived = "MachineCommandReceived"
     InterlockViolated = "InterlockViolated"

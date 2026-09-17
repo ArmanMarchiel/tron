@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from backend.app.config import ADAPTER, DATA_DIR, DEFAULT_ROBOT, DEFAULT_SCENARIO, ROBOT_ID, SAFETY, SIM
 from backend.pipeline.events.event_model import Event, EventType
 from backend.pipeline.incidents.timeline import markers, state_at, track
+from backend.conf.machines import list_machines
 from backend.conf.registry import list_robots
 from backend.conf.scenarios.loader import list_scenarios, load_scenario, save_scenario
 from backend.pipeline.twin.robot_model import robot_summary
@@ -29,6 +30,7 @@ class SessionBody(BaseModel):
     robot: str = DEFAULT_ROBOT
     scenario: str = DEFAULT_SCENARIO
     adapter: str = "mujoco"
+    machine: str | None = None      # override the scenario's own machine for this session
 
 
 class ReplayBody(BaseModel):
@@ -42,6 +44,16 @@ class CameraBody(BaseModel):
     d_elevation: float = 0.0
     zoom: float = 1.0
     reset: bool = False
+
+
+class ViewportBody(BaseModel):
+    width: int
+    height: int
+
+
+class OverlayBody(BaseModel):
+    name: str
+    visible: bool = True
 
 
 class RecordBody(BaseModel):
@@ -72,7 +84,8 @@ def build_router(p: Platform, sessions, auth) -> APIRouter:
     @r.post("/session", dependencies=[Depends(require)])
     async def start_session(body: SessionBody, request: Request):
         try:
-            info = await asyncio.to_thread(sessions.start, body.robot, body.scenario, body.adapter)
+            info = await asyncio.to_thread(sessions.start, body.robot, body.scenario, body.adapter,
+                                           True, body.machine)
         except KeyError as e:
             raise HTTPException(404, str(e))
         except Exception as e:
@@ -102,6 +115,18 @@ def build_router(p: Platform, sessions, auth) -> APIRouter:
         return sc.model_dump()
 
     # ---------------------------------------------------------------- robot / twin
+    @r.get("/machines")
+    def machines():
+        """The machine tools a scenario can be built around (backend/conf/machines/machines.yaml)."""
+        cur = sessions.info()
+        active = None
+        if cur:
+            try:
+                active = load_scenario(cur["scenario"]).machine.ref
+            except Exception:
+                active = None
+        return [dict(mm, active=(mm["id"] == active)) for mm in list_machines()]
+
     @r.get("/robots")
     def robots():
         return [robot_summary(p.state.twin)]
@@ -312,6 +337,29 @@ def build_router(p: Platform, sessions, auth) -> APIRouter:
         if p.renderer is None:
             raise HTTPException(503, "no in-process simulator")
         return p.renderer.orbit_update(body.d_azimuth, body.d_elevation, body.zoom, body.reset)
+
+    @r.post("/sim/viewport")
+    def sim_viewport(body: ViewportBody):
+        """The viewer reports its panel size so the render matches its shape rather than letterboxing."""
+        if p.renderer is None:
+            raise HTTPException(503, "no in-process simulator")
+        return p.renderer.resize(body.width, body.height)
+
+    @r.get("/sim/overlays")
+    def sim_overlays():
+        """Which annotation layers (zones, reach envelope, scanner field, floor markings) are drawn."""
+        if p.renderer is None:
+            raise HTTPException(503, "no in-process simulator")
+        return p.renderer.overlay_state()
+
+    @r.post("/sim/overlays")
+    def set_sim_overlay(body: OverlayBody):
+        if p.renderer is None:
+            raise HTTPException(503, "no in-process simulator")
+        try:
+            return {"overlays": p.renderer.set_overlay(body.name, body.visible)}
+        except KeyError:
+            raise HTTPException(404, f"unknown overlay '{body.name}'")
 
     @r.get("/sim/views")
     def sim_views():

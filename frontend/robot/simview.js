@@ -2,12 +2,14 @@
 // frame of the twin's historical joint configuration in history mode. A tab row switches between the
 // environment camera and the camera mounted on the robot's wrist. Below it, per-joint bars compare
 // actual (blue) vs expected (green) joint angles.
-const LIMITS = [[-2.8973, 2.8973], [-1.7628, 1.7628], [-2.8973, 2.8973], [-3.0718, -0.0698], [-2.8973, 2.8973], [-0.0175, 3.7525], [-2.8973, 2.8973]];
 let mode = "live", historyTs = null, view = "environment", views = [];
 
 function applySrc() {
   const img = document.getElementById("simview");
-  img.src = mode === "live" ? `/api/sim/stream?view=${view}` : `/api/sim/frame?view=${view}&ts=${historyTs}&_=${Date.now()}`;
+  // the cache-buster matters on a reload: without it the <img> keeps the MJPEG connection it already
+  // has, which is still streaming the previous cell
+  img.src = mode === "live" ? `/api/sim/stream?view=${view}&_=${Date.now()}`
+                            : `/api/sim/frame?view=${view}&ts=${historyTs}&_=${Date.now()}`;
 }
 
 let pending = { az: 0, el: 0, zoom: 1 }, flushTimer = null;
@@ -19,6 +21,25 @@ function queueCamera(dAz, dEl, zoom) {
   if (flushTimer) return;
   flushTimer = setTimeout(() => { const b = { d_azimuth: pending.az, d_elevation: pending.el, zoom: pending.zoom }; pending = { az: 0, el: 0, zoom: 1 }; flushTimer = null; sendCamera(b); }, 40);
 }
+let vpTimer = null, vpLast = "";
+function reportViewport() {
+  const wrap = document.getElementById("simwrap");
+  if (!wrap) return;
+  const r = wrap.getBoundingClientRect();
+  const w = Math.round(r.width), h = Math.round(r.height);
+  if (!w || !h) return;
+  const key = `${w}x${h}`;
+  if (key === vpLast) return;
+  vpLast = key;
+  clearTimeout(vpTimer);
+  vpTimer = setTimeout(() => {
+    fetch("/api/sim/viewport", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ width: w, height: h }) })
+      .then(() => applySrc())          // reconnect so the stream carries the new size
+      .catch(() => {});
+  }, 200);
+}
+
 function initControls() {
   const wrap = document.getElementById("simwrap");
   const zin = document.getElementById("zoom-in"), zout = document.getElementById("zoom-out"), rst = document.getElementById("cam-reset");
@@ -34,6 +55,26 @@ function initControls() {
   wrap.addEventListener("touchmove", (e) => { if (!drag || e.touches.length !== 1) return; const t = e.touches[0]; queueCamera(-(t.clientX - drag.x) * 0.4, -(t.clientY - drag.y) * 0.3, 1); drag = { x: t.clientX, y: t.clientY }; }, { passive: true });
   wrap.addEventListener("touchend", () => { drag = null; });
 }
+const OVERLAY_LABELS = { robot_rom: "Robot ROM", cnc_interior: "CNC interior", collab_front: "Reduced speed", operator_side: "Separation (SSM)" };
+const prettify = (n) => OVERLAY_LABELS[n] || n.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+export async function refreshOverlays() {
+  const el = document.getElementById("overlay-toggles");
+  if (!el) return;
+  let state;
+  try { state = await fetch("/api/sim/overlays").then(r => r.json()); } catch (e) { el.style.display = "none"; return; }
+  const names = Object.keys(state.overlays || {});
+  if (!names.length) { el.style.display = "none"; return; }
+  const colors = state.colors || {};
+  el.innerHTML = `<span class="ov-title">Zones</span>` + names.map(n =>
+    `<label><input type="checkbox" data-overlay="${n}"${state.overlays[n] ? " checked" : ""}>` +
+    `<i class="sw" style="background:${colors[n] || "#888"}"></i>${prettify(n)}</label>`).join("");
+  el.querySelectorAll("input").forEach(cb => cb.onchange = () => {
+    fetch("/api/sim/overlays", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: cb.dataset.overlay, visible: cb.checked }) }).catch(() => {});
+  });
+}
+
 function updateControls() {
   const wrap = document.getElementById("simwrap"), env = view === "environment";
   wrap.classList.toggle("fixed", !env);
@@ -43,6 +84,9 @@ function updateControls() {
 
 export async function initSimView(tabsEl) {
   initControls();
+  refreshOverlays();
+  reportViewport();
+  window.addEventListener("resize", reportViewport);
   try { views = await fetch("/api/sim/views").then(r => r.json()); } catch (e) { views = [{ id: "environment", label: "Environment" }]; }
   tabsEl.innerHTML = views.map(v => `<button data-view="${v.id}" class="${v.id === view ? "active" : ""}">${v.label}</button>`).join("");
   tabsEl.querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -59,13 +103,3 @@ export function setSimMode(m, ts, force = false) {
   applySrc();
 }
 
-export function renderSimView(barsEl, twin) {
-  const p = twin.physical.position || [], e = twin.expected.position || [];
-  const errs = twin.divergence.joint_errors || [];
-  barsEl.innerHTML = twin.identity.joints.map((n, i) => {
-    const [lo, hi] = LIMITS[i] || [-3.14, 3.14];
-    const pct = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
-    const cls = Math.abs(errs[i] || 0) >= 0.15 ? "bad" : "";
-    return `<div class="jb">${n}<div class="track"><div class="e" style="left:${e[i] != null ? pct(e[i]) : 0}%"></div><div class="a" style="left:${pct(p[i] || 0)}%"></div></div><span class="v ${cls}">${(p[i] || 0).toFixed(2)}</span> <span>${e[i] != null ? "/ " + e[i].toFixed(2) : ""}</span></div>`;
-  }).join("");
-}

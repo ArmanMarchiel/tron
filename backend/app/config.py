@@ -22,7 +22,7 @@ SIM = {
     "waypoints": str(BACKEND_DIR / "io" / "sim" / "assets" / "waypoints.json"),
     "camera": "twin_cam",
     "cameras": {"environment": "twin_cam", "robot": "wrist_cam"},
-    "render_hz": 15, "width": 960, "height": 640, "jpeg_quality": 80,
+    "render_hz": 15, "width": 880, "height": 780, "jpeg_quality": 80,
     "control_hz": 50,
 }
 

@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from backend.app.config import DATA_DIR
+from backend.conf.machines import get_machine
 from backend.conf.registry import ASSETS, RobotProfile
 
 DATA_SCENES = DATA_DIR / "scenes"
@@ -92,29 +93,83 @@ def _robot_block(robot: RobotProfile) -> str:
     return xml + extra
 
 
-def _scenario_bodies(scenario, floor_z: float = -0.75) -> str:
-    """World bodies for the scenario's props (trays, blocks, CNC, human, zones, scanner)."""
+def _floor_markings(scenario, robot, floor_z: float) -> str:
+    """Painted yellow boundary around the work cell, as a real shop floor is marked.
+
+    The rectangle encloses everything inside the cell -- the machine's footprint and the robot's
+    range of motion -- with a walking margin, so the operator aisle outside it is genuinely clear of
+    both.  It is derived, not authored, so it follows a machine swap or a different arm.
+    """
+    x0, x1, y0, y1 = cell_bounds(scenario, robot)
+    z = floor_z + 0.004                        # paint sits on the slab
+    w = 0.05                                   # 100 mm painted line
     out = []
+    for name, cx, cy, sx, sy in (("n", (x0 + x1) / 2, y1, (x1 - x0) / 2 + w, w),
+                                 ("s", (x0 + x1) / 2, y0, (x1 - x0) / 2 + w, w),
+                                 ("e", x1, (y0 + y1) / 2, w, (y1 - y0) / 2),
+                                 ("w", x0, (y0 + y1) / 2, w, (y1 - y0) / 2)):
+        out.append(f'<geom name="floor_line_{name}" type="box" size="{sx:g} {sy:g} 0.002" '
+                   f'pos="{cx:g} {cy:g} {z:g}" material="floor_line" contype="0" conaffinity="0"/>')
+    return "\n".join(out)
+
+
+def cell_bounds(scenario, robot, pad: float = 0.35) -> tuple[float, float, float, float]:
+    """(x0, x1, y0, y1) of the marked work cell: machine footprint + robot envelope + margin."""
+    rom = robot.reach_m + next((z.margin_m for z in scenario.zones if z.type == "reach_envelope"), 0.0)
+    xs, ys = [-rom, rom], [-rom, rom]
+    if scenario.machine:
+        prof = get_machine(scenario.machine.ref)
+        mp = scenario.machine.pose
+        xs += [mp[0] + prof.front_offset, mp[0] - prof.front_offset]
+        ys += [mp[1] - prof.width / 2, mp[1] + prof.width / 2]
+    return min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
+
+
+def _scenario_bodies(scenario, robot, floor_z: float = -0.75) -> str:
+    """World bodies for the scenario's props (trays, blocks, CNC, human, zones, scanner)."""
+    out = [_floor_markings(scenario, robot, floor_z)]
     for tray in scenario.trays:
         x, y, z = tray.pose
         out.append(f'<body name="{tray.id}" pos="{x} {y} {z}"><geom name="{tray.id}_geom" type="box" size="0.17 0.12 0.01" material="tray_mat"/></body>')
+        # a stand from the tray underside down to the slab: a tray never floats
+        top = z - 0.01
+        h = (top - floor_z) / 2
+        if h > 0.01:
+            out.append(f'<geom name="{tray.id}_stand" type="box" size="0.15 0.10 {h:g}" '
+                       f'pos="{x} {y} {floor_z + h:g}" material="haas_base"/>')
     for b in scenario.blocks:
         x, y, z = b.pose
         mat = "block_finished" if b.finished else "block_raw"
+        # a cylinder reads as a turned part, so a finished piece is recognisable at a glance
+        size = f"{b.size} {b.height if b.height is not None else b.size}" if b.shape == "cylinder" \
+            else f"{b.size} {b.size} {b.size}"
         out.append(f'<body name="{b.id}" pos="{x} {y} {z}"><freejoint name="{b.id}_free"/>'
-                   f'<geom name="{b.id}_geom" type="box" size="{b.size} {b.size} {b.size}" material="{mat}" mass="{b.mass}" friction="1.2 0.02 0.001" contype="3" conaffinity="3"/></body>')
+                   f'<geom name="{b.id}_geom" type="{b.shape}" size="{size}" material="{mat}" mass="{b.mass}" friction="1.2 0.02 0.001" contype="3" conaffinity="3"/></body>')
     if scenario.machine:
         x, y, z = scenario.machine.pose
-        out.append((ASSETS / "cnc_machine.xml").read_text().replace("__POS__", f"{x} {y} {z}"))
+        prof = get_machine(scenario.machine.ref)
+        out.append(prof.mjcf_path.read_text().replace("__POS__", f"{x} {y} {z}")
+                   .replace("__SHELL_GEOMS__", prof.shell_geoms()))
     if scenario.human:
         x, y, z = scenario.human.pose
         out.append((ASSETS / "humanoid_operator.xml").read_text().replace("__POS__", f"{x} {y} {z}"))
     for zone in scenario.zones:
+        if zone.type == "reach_envelope":
+            # the volume the arm can physically sweep: a cylinder centred on the robot base at the origin
+            r = zone.radius or (robot.reach_m + zone.margin_m)
+            h = zone.height or r
+            out.append(f'<geom name="zone_{zone.id}" type="cylinder" size="{r:g} {h / 2:g}" pos="0 0 {h / 2:g}" '
+                       f'material="zone_reach" contype="0" conaffinity="0"/>')
+            continue
         lo, hi = zone.min, zone.max
+        if not lo and scenario.machine:      # bounds omitted -> the machine's working volume
+            lo, hi = get_machine(scenario.machine.ref).interior_bounds(scenario.machine.pose)
+        if not lo:
+            continue
         c = [(lo[i] + hi[i]) / 2 for i in range(3)]
-        s = [(hi[i] - lo[i]) / 2 for i in range(3)]
+        sz = [(hi[i] - lo[i]) / 2 for i in range(3)]
         mat = "zone_mat" if zone.type.startswith("restricted") else "zone_speed" if zone.type == "reduced_speed" else "scanner_mat"
-        out.append(f'<geom name="zone_{zone.id}" type="box" size="{_q(s)}" pos="{_q(c)}" material="{mat}" contype="0" conaffinity="0"/>')
+        out.append(f'<geom name="zone_{zone.id}" type="box" size="{_q(sz)}" pos="{_q(c)}" material="{mat}" contype="0" conaffinity="0"/>')
     for sc in scenario.sensors:
         if sc.type == "area_scanner":
             lo, hi = sc.field_min, sc.field_max
@@ -136,8 +191,12 @@ def _grasp_welds(robot: RobotProfile, scenario) -> str:
 def compose(robot: RobotProfile, scenario, session_id: str) -> Path:
     tpl = (ASSETS / "scene_template.xml").read_text()
     ped = robot.pedestal_height
-    body = _scenario_bodies(scenario, floor_z=-ped)
-    scene = (tpl.replace("__PEDESTAL_HALF__", f"{ped / 2:g}").replace("__PEDESTAL__", f"{ped:g}")
+    body = _scenario_bodies(scenario, robot, floor_z=-ped)
+    # a machine built from CAD ships meshes; they must be declared in the top-level <asset> block
+    machine_assets = get_machine(scenario.machine.ref).mesh_assets() if scenario.machine else ""
+    scene = (tpl.replace("__PEDESTAL_HALF__", f"{ped / 2:g}").replace("__PEDESTAL_FOOT__", f"{ped - 0.03:g}")
+             .replace("__PEDESTAL__", f"{ped:g}")
+             .replace("__MACHINE_ASSETS__", machine_assets)
              .replace("__SCENE_BODIES__", body))
     robot_xml = _robot_block(robot)
     # robot goes inside the worldbody; its <asset>/<default>/<actuator>/... sections must be top-level

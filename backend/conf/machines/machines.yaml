@@ -1,0 +1,65 @@
+# Machine registry. Each entry describes a machine tool the cell can be built around: the meshes that
+# draw it, where the part sits, and the real-world dimensions the scenario zones derive from.
+# A scenario selects one with `machine: {ref: <id>}`.
+#
+# Each machine is imported from manufacturer CAD (SolidWorks STEP) by backend/scripts/cad_machine.py,
+# which keeps one mesh per colour in the source model so the render matches the real machine. Those
+# meshes are visual only: MuJoCo collides a mesh as its convex hull, so a hollow enclosure imported as
+# one mesh would be a solid block. Collision comes from primitives in each machine's XML.
+#
+# Every model must expose the contract the adapter drives:
+#   joints  cnc_door_joint, cnc_jaw_l_joint, cnc_jaw_r_joint
+#   site    cnc_chuck_site
+#   body    cnc_machine      (placed at the scenario's machine pose)
+machines:
+  haas_vf2_cad:
+    # imported: cad_machine.py backend/cad/haas-vf2/CNC.STEP --name haas_vf2_cad
+    name: Haas VF-2 (vertical machining centre)
+    mjcf: haas_vf2_cad.xml
+    meshes: {haas_vf2_cad_0: {file: haas_vf2_cad/haas_vf2_cad_0.msh, rgba: [0.2431, 0.2627, 0.2627, 1.0]}, haas_vf2_cad_1: {file: haas_vf2_cad/haas_vf2_cad_1.msh, rgba: [0.2078, 0.2078, 0.2078, 1.0]}, haas_vf2_cad_2: {file: haas_vf2_cad/haas_vf2_cad_2.msh, rgba: [0.0706, 0.0706, 0.0706, 1.0]}, haas_vf2_cad_3: {file: haas_vf2_cad/haas_vf2_cad_3.msh, rgba: [0.4039, 0.4471, 0.5529, 1.0]}, haas_vf2_cad_4: {file: haas_vf2_cad/haas_vf2_cad_4.msh, rgba: [1.0, 1.0, 1.0, 1.0]}, haas_vf2_cad_5: {file: haas_vf2_cad/haas_vf2_cad_5.msh, rgba: [0.0078, 0.0078, 0.0078, 1.0]}, haas_vf2_cad_6: {file: haas_vf2_cad/haas_vf2_cad_6.msh, rgba: [0.7843, 0.8235, 0.8471, 1.0]}, haas_vf2_cad_7: {file: haas_vf2_cad/haas_vf2_cad_7.msh, rgba: [0.7765, 0.8157, 0.8471, 1.0]}}
+    dimensions: {width: 2.504, depth: 2.325, height: 2.278, enclosure_height: 1.93}
+    door: {opening_width: 0.94, travel: 0.94, axis: y, panels: 2, clear_top: 1.88}
+    table: {width: 0.72, depth: 0.36, height: 0.83, jaw_clamped: 0.055}
+    travels: {x: 0.762, y: 0.406, z: 0.508}
+    spindle: {taper: "CT/BT 40", max_rpm: 8100, power_kw: 22.4}
+    tool_changer: {type: umbrella, stations: 20}
+    chuck_offset: [-0.62, 0.0, 0.942]
+    # measured off the tessellated shell: behind the door, above the bed, inside the side walls
+    work_volume: {min: [-0.95, -0.92, 0.78], max: [0.40, 0.84, 1.75]}
+    front_offset: -1.162
+    max_table_load_kg: 680
+
+  haas_st10:
+    # imported: cad_machine.py backend/cad/haas-st10/ST-10.STEP --name haas_st10 --yaw -90
+    name: Haas ST-10 (turning centre)
+    mjcf: haas_st10.xml
+    meshes: {haas_st10_0: {file: haas_st10/haas_st10_0.msh, rgba: [0.2157, 0.2157, 0.2157, 1.0]}, haas_st10_1: {file: haas_st10/haas_st10_1.msh, rgba: [0.5922, 0.6392, 0.8549, 1.0]}, haas_st10_2: {file: haas_st10/haas_st10_2.msh, rgba: [0.5255, 0.5255, 0.5255, 1.0]}, haas_st10_3: {file: haas_st10/haas_st10_3.msh, rgba: [1.0, 1.0, 1.0, 1.0]}, haas_st10_4: {file: haas_st10/haas_st10_4.msh, rgba: [0.0, 0.0, 0.0, 1.0]}, haas_st10_5: {file: haas_st10/haas_st10_5.msh, rgba: [0.7922, 0.8235, 0.8235, 1.0]}, haas_st10_6: {file: haas_st10/haas_st10_6.msh, rgba: [0.0, 1.0, 0.0, 1.0]}, haas_st10_7: {file: haas_st10/haas_st10_7.msh, rgba: [1.0, 0.0, 0.0, 1.0]}, haas_st10_8: {file: haas_st10/haas_st10_8.msh, rgba: [0.0, 0.5255, 0.0, 1.0]}, haas_st10_9: {file: haas_st10/haas_st10_9.msh, rgba: [0.051, 0.051, 0.051, 1.0]}, haas_st10_10: {file: haas_st10/haas_st10_10.msh, rgba: [0.0, 1.0, 1.0, 1.0]}}
+    # measured off the assembled shell; the door faces -x, toward the robot
+    dimensions: {width: 3.030, depth: 2.041, height: 1.564, enclosure_height: 1.50}
+    door: {opening_width: 0.70, travel: 0.70, axis: y, panels: 1, clear_top: 1.45}
+    table: {width: 0.40, depth: 0.40, height: 0.95, jaw_clamped: 0.04}
+    travels: {x: 0.267, z: 0.406}
+    spindle: {max_rpm: 6000, power_kw: 11.2, bar_capacity_mm: 44.5}
+    tool_changer: {type: turret, stations: 12}
+    chuck_offset: [-0.35, 0.0, 0.95]
+    work_volume: {min: [-0.80, -0.55, 0.80], max: [0.40, 0.55, 1.45]}
+    front_offset: -1.020
+    max_table_load_kg: 200
+
+  haas_vc400:
+    # imported: cad_machine.py 'backend/cad/haas-vc400/VC-400 with Pallet Pool_STEP.STEP' --name haas_vc400 --yaw 180
+    name: Haas VC-400 (twin-pallet VMC, with pallet pool)
+    mjcf: haas_vc400.xml
+    meshes: {haas_vc400_0: {file: haas_vc400/haas_vc400_0.msh, rgba: [0.5255, 0.5255, 0.5255, 1.0]}, haas_vc400_1: {file: haas_vc400/haas_vc400_1.msh, rgba: [0.0314, 0.0314, 0.0314, 1.0]}, haas_vc400_2: {file: haas_vc400/haas_vc400_2.msh, rgba: [0.5255, 0.5255, 1.0, 1.0]}, haas_vc400_3: {file: haas_vc400/haas_vc400_3.msh, rgba: [1.0, 0.8784, 0.6235, 1.0]}, haas_vc400_4: {file: haas_vc400/haas_vc400_4.msh, rgba: [0.2157, 0.2157, 1.0, 1.0]}, haas_vc400_5: {file: haas_vc400/haas_vc400_5.msh, rgba: [0.8078, 0.702, 0.6157, 1.0]}, haas_vc400_6: {file: haas_vc400/haas_vc400_6.msh, rgba: [1.0, 0.0, 0.2157, 1.0]}, haas_vc400_7: {file: haas_vc400/haas_vc400_7.msh, rgba: [0.8078, 0.1647, 0.0039, 1.0]}, haas_vc400_8: {file: haas_vc400/haas_vc400_8.msh, rgba: [0.0, 0.5255, 0.5255, 1.0]}, haas_vc400_9: {file: haas_vc400/haas_vc400_9.msh, rgba: [0.5255, 1.0, 1.0, 1.0]}, haas_vc400_10: {file: haas_vc400/haas_vc400_10.msh, rgba: [0.0, 1.0, 1.0, 1.0]}, haas_vc400_11: {file: haas_vc400/haas_vc400_11.msh, rgba: [1.0, 0.5255, 0.5255, 1.0]}, haas_vc400_12: {file: haas_vc400/haas_vc400_12.msh, rgba: [0.2431, 0.2627, 0.2627, 1.0]}, haas_vc400_13: {file: haas_vc400/haas_vc400_13.msh, rgba: [0.4667, 0.5765, 0.651, 1.0]}, haas_vc400_14: {file: haas_vc400/haas_vc400_14.msh, rgba: [0.2157, 0.2157, 0.5255, 1.0]}, haas_vc400_15: {file: haas_vc400/haas_vc400_15.msh, rgba: [0.9725, 0.502, 0.2314, 1.0]}, haas_vc400_16: {file: haas_vc400/haas_vc400_16.msh, rgba: [0.5647, 0.5333, 0.502, 1.0]}, haas_vc400_17: {file: haas_vc400/haas_vc400_17.msh, rgba: [0.3804, 0.3412, 0.3059, 1.0]}, haas_vc400_18: {file: haas_vc400/haas_vc400_18.msh, rgba: [0.1608, 1.0, 0.898, 1.0]}, haas_vc400_19: {file: haas_vc400/haas_vc400_19.msh, rgba: [1.0, 1.0, 0.0, 1.0]}, haas_vc400_20: {file: haas_vc400/haas_vc400_20.msh, rgba: [0.3765, 0.3412, 0.3059, 1.0]}, haas_vc400_21: {file: haas_vc400/haas_vc400_21.msh, rgba: [0.5255, 0.5255, 0.0, 1.0]}, haas_vc400_22: {file: haas_vc400/haas_vc400_22.msh, rgba: [1.0, 0.5255, 1.0, 1.0]}, haas_vc400_23: {file: haas_vc400/haas_vc400_23.msh, rgba: [1.0, 0.8863, 0.8078, 1.0]}, haas_vc400_24: {file: haas_vc400/haas_vc400_24.msh, rgba: [0.0431, 0.0667, 0.651, 1.0]}, haas_vc400_25: {file: haas_vc400/haas_vc400_25.msh, rgba: [0.2157, 0.2157, 0.2157, 1.0]}, haas_vc400_26: {file: haas_vc400/haas_vc400_26.msh, rgba: [0.1608, 0.1608, 0.1608, 1.0]}, haas_vc400_27: {file: haas_vc400/haas_vc400_27.msh, rgba: [0.9294, 0.9804, 0.6314, 1.0]}, haas_vc400_28: {file: haas_vc400/haas_vc400_28.msh, rgba: [1.0, 1.0, 0.5255, 1.0]}, haas_vc400_29: {file: haas_vc400/haas_vc400_29.msh, rgba: [0.9059, 0.9059, 0.9059, 1.0]}, haas_vc400_30: {file: haas_vc400/haas_vc400_30.msh, rgba: [0.4471, 0.4471, 0.4471, 1.0]}, haas_vc400_31: {file: haas_vc400/haas_vc400_31.msh, rgba: [0.5216, 0.5216, 0.5216, 1.0]}, haas_vc400_32: {file: haas_vc400/haas_vc400_32.msh, rgba: [0.3176, 0.3176, 0.3176, 1.0]}, haas_vc400_33: {file: haas_vc400/haas_vc400_33.msh, rgba: [0.3804, 0.5255, 0.7098, 1.0]}, haas_vc400_34: {file: haas_vc400/haas_vc400_34.msh, rgba: [1.0, 0.0, 0.0, 1.0]}, haas_vc400_35: {file: haas_vc400/haas_vc400_35.msh, rgba: [0.0, 0.2157, 0.2157, 1.0]}, haas_vc400_36: {file: haas_vc400/haas_vc400_36.msh, rgba: [0.5647, 0.4353, 0.0392, 1.0]}, haas_vc400_37: {file: haas_vc400/haas_vc400_37.msh, rgba: [0.3922, 0.6941, 0.6235, 1.0]}, haas_vc400_38: {file: haas_vc400/haas_vc400_38.msh, rgba: [0.7843, 0.8235, 0.8471, 1.0]}, haas_vc400_39: {file: haas_vc400/haas_vc400_39.msh, rgba: [0.4039, 0.4471, 0.5529, 1.0]}, haas_vc400_40: {file: haas_vc400/haas_vc400_40.msh, rgba: [0.6784, 0.6784, 0.0, 1.0]}, haas_vc400_41: {file: haas_vc400/haas_vc400_41.msh, rgba: [0.7451, 0.7451, 0.7451, 1.0]}, haas_vc400_42: {file: haas_vc400/haas_vc400_42.msh, rgba: [0.0, 0.2157, 0.5255, 1.0]}, haas_vc400_43: {file: haas_vc400/haas_vc400_43.msh, rgba: [0.0588, 0.0588, 0.0588, 1.0]}, haas_vc400_44: {file: haas_vc400/haas_vc400_44.msh, rgba: [1.0, 0.2157, 0.051, 1.0]}, haas_vc400_45: {file: haas_vc400/haas_vc400_45.msh, rgba: [1.0, 1.0, 0.2157, 1.0]}, haas_vc400_46: {file: haas_vc400/haas_vc400_46.msh, rgba: [0.4549, 0.4549, 0.4549, 1.0]}, haas_vc400_47: {file: haas_vc400/haas_vc400_47.msh, rgba: [0.7294, 0.9804, 0.9922, 1.0]}, haas_vc400_48: {file: haas_vc400/haas_vc400_48.msh, rgba: [1.0, 0.3412, 0.0471, 1.0]}, haas_vc400_49: {file: haas_vc400/haas_vc400_49.msh, rgba: [0.7216, 0.8078, 1.0, 1.0]}, haas_vc400_50: {file: haas_vc400/haas_vc400_50.msh, rgba: [0.7451, 0.4196, 0.1373, 1.0]}, haas_vc400_51: {file: haas_vc400/haas_vc400_51.msh, rgba: [0.9804, 0.5216, 0.051, 1.0]}, haas_vc400_52: {file: haas_vc400/haas_vc400_52.msh, rgba: [0.9294, 0.7216, 0.0784, 1.0]}, haas_vc400_53: {file: haas_vc400/haas_vc400_53.msh, rgba: [0.1529, 0.1765, 0.2078, 1.0]}, haas_vc400_54: {file: haas_vc400/haas_vc400_54.msh, rgba: [1.0, 1.0, 0.0784, 1.0]}, haas_vc400_55: {file: haas_vc400/haas_vc400_55.msh, rgba: [0.5255, 1.0, 0.5255, 1.0]}, haas_vc400_56: {file: haas_vc400/haas_vc400_56.msh, rgba: [0.051, 0.051, 0.051, 1.0]}, haas_vc400_57: {file: haas_vc400/haas_vc400_57.msh, rgba: [0.9922, 0.7294, 0.5412, 1.0]}, haas_vc400_58: {file: haas_vc400/haas_vc400_58.msh, rgba: [0.0353, 0.0392, 0.0392, 1.0]}, haas_vc400_59: {file: haas_vc400/haas_vc400_59.msh, rgba: [0.0, 0.0, 0.0, 1.0]}, haas_vc400_60: {file: haas_vc400/haas_vc400_60.msh, rgba: [1.0, 0.2157, 0.2157, 1.0]}, haas_vc400_61: {file: haas_vc400/haas_vc400_61.msh, rgba: [0.5412, 0.5647, 0.9569, 1.0]}, haas_vc400_62: {file: haas_vc400/haas_vc400_62.msh, rgba: [1.0, 0.4471, 0.1608, 1.0]}, haas_vc400_63: {file: haas_vc400/haas_vc400_63.msh, rgba: [0.0, 0.2157, 1.0, 1.0]}, haas_vc400_64: {file: haas_vc400/haas_vc400_64.msh, rgba: [0.8314, 0.8314, 0.8314, 1.0]}, haas_vc400_65: {file: haas_vc400/haas_vc400_65.msh, rgba: [0.9569, 0.6863, 0.9294, 1.0]}, haas_vc400_66: {file: haas_vc400/haas_vc400_66.msh, rgba: [0.6392, 0.5961, 0.2078, 1.0]}, haas_vc400_67: {file: haas_vc400/haas_vc400_67.msh, rgba: [0.5922, 0.6392, 0.8549, 1.0]}, haas_vc400_68: {file: haas_vc400/haas_vc400_68.msh, rgba: [0.8549, 0.8549, 0.8549, 1.0]}, haas_vc400_69: {file: haas_vc400/haas_vc400_69.msh, rgba: [0.298, 0.298, 0.298, 1.0]}, haas_vc400_70: {file: haas_vc400/haas_vc400_70.msh, rgba: [0.4275, 0.4275, 0.502, 1.0]}, haas_vc400_71: {file: haas_vc400/haas_vc400_71.msh, rgba: [0.0, 0.0, 0.051, 1.0]}, haas_vc400_72: {file: haas_vc400/haas_vc400_72.msh, rgba: [1.0, 1.0, 1.0, 1.0]}}
+    # the CAD is the mill plus its 6+1 pallet pool; the door faces -x, toward the robot
+    dimensions: {width: 6.202, depth: 3.471, height: 2.958, enclosure_height: 2.60}
+    door: {opening_width: 0.80, travel: 0.80, axis: y, panels: 1, clear_top: 2.40}
+    table: {width: 0.559, depth: 0.368, height: 1.05, jaw_clamped: 0.055}
+    travels: {x: 0.559, y: 0.406, z: 0.508}
+    spindle: {taper: "CT/BT 40", max_rpm: 8100, power_kw: 22.4}
+    tool_changer: {type: side_mount, stations: 31}
+    chuck_offset: [-0.40, 0.0, 1.10]
+    work_volume: {min: [-1.00, -0.80, 1.00], max: [0.60, 0.80, 2.40]}
+    front_offset: -1.735
+    max_table_load_kg: 227
+

@@ -8,14 +8,18 @@ MOVING until the slide actually arrives.
 """
 from __future__ import annotations
 
-DOOR_OPEN_POS = 0.78
+DOOR_OPEN_POS = 0.78        # default slide travel; a machine profile may override it
 JAW_CLAMPED_POS = 0.04
 
 
 class CNCMachine:
-    def __init__(self, machine_id: str, cycle_time_s: float, allowed_clients: list[str], part_loaded: bool = True):
+    def __init__(self, machine_id: str, cycle_time_s: float, allowed_clients: list[str], part_loaded: bool = True,
+                 door_travel: float | None = None, jaw_clamped: float | None = None):
         self.id = machine_id
         self.cycle_time_s = cycle_time_s
+        # how far this machine's door actually slides / its jaws close (from the machine registry)
+        self.door_travel = DOOR_OPEN_POS if door_travel is None else door_travel
+        self.jaw_clamped = JAW_CLAMPED_POS if jaw_clamped is None else jaw_clamped
         self.allowed_clients = list(allowed_clients)
         self.state = "COMPLETE" if part_loaded else "IDLE"
         self.chuck = "CLAMPED" if part_loaded else "OPEN"
@@ -30,7 +34,7 @@ class CNCMachine:
     # ---------------------------------------------------------------- reported tags
     @property
     def door(self) -> str:
-        if self.door_pos >= DOOR_OPEN_POS - 0.02:
+        if self.door_pos >= self.door_travel - 0.02:
             return "OPEN"
         if self.door_pos <= 0.02:
             return "CLOSED"
@@ -52,7 +56,7 @@ class CNCMachine:
 
     @property
     def jaw_target(self) -> float:
-        return JAW_CLAMPED_POS if self.chuck == "CLAMPED" else 0.0
+        return self.jaw_clamped if self.chuck == "CLAMPED" else 0.0
 
     # ---------------------------------------------------------------- commands
     def command(self, cmd: str, client: str, now: float) -> tuple[bool, str]:
@@ -66,7 +70,7 @@ class CNCMachine:
             if self.state == "RUNNING" and self.interlock_bypass:
                 self.alarm = "DOOR_OPENED_WHILE_RUNNING"
                 self.state = "ALARM"
-            self.door_target = DOOR_OPEN_POS
+            self.door_target = self.door_travel
             return True, "ok"
         if cmd == "door_close":
             self.door_target = 0.0

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from collections.abc import Callable
 
 from backend.app.config import EFFORT_LIMITS, ENVIRONMENT, JOINTS, ROBOT_ID, ROBOT_MODEL, ROBOT_NAME, SAFETY, SECURITY, SNAPSHOT_HZ, SNAPSHOT_RETENTION_S
@@ -127,6 +128,9 @@ class StateEngine:
             t["task"].update({"step": pl.get("step"), "index": pl.get("index"), "action": pl.get("action"), "started_ts": ts,
                               "duration_s": pl.get("duration_s"), "timeout_s": pl.get("timeout_s"), "status": "active",
                               "target": pl.get("target"), "precondition": pl.get("precondition")})
+            if pl.get("cycles_target") is not None or pl.get("cycles_done") is not None:
+                t["task"]["cycles_target"] = pl.get("cycles_target", t["task"]["cycles_target"])
+                t["task"]["cycles_done"] = pl.get("cycles_done", t["task"]["cycles_done"])
             t["software"]["planner"]["machine_belief"] = pl.get("machine_belief")
             self.expected.on_task_step(pl, ts)
         elif et in (EventType.TaskStepCompleted, EventType.TaskStepFailed):
@@ -135,6 +139,13 @@ class StateEngine:
             if et == EventType.TaskStepFailed:
                 t["task"]["last_failure"] = {"step": pl.get("step"), "reason": pl.get("reason"), "ts": ts}
             self.expected.on_task_done(ts)
+        elif et == EventType.TaskCycleCompleted:
+            t["task"]["cycles_done"] = pl.get("cycle", t["task"]["cycles_done"])
+            t["task"]["cycles_target"] = pl.get("cycles_target")
+        elif et == EventType.TaskRunCompleted:
+            t["task"].update({"run_done": True, "status": "done", "step": None,
+                              "cycles_done": pl.get("cycles_completed", t["task"]["cycles_done"]),
+                              "cycles_target": pl.get("cycles_target"), "finished_ts": ts})
         elif et == EventType.MachineStateObserved:
             if t["machine"] is None:
                 t["machine"] = {"id": pl.get("machine_id"), "last_command": None, "last_interlock": None, "allowed_clients": []}
@@ -181,6 +192,9 @@ class StateEngine:
         p["protective_stop"] = bool(pl.get("protective_stop", False))
         p["human_in_scanner_field"] = bool(pl.get("human_in_field", False))
         p["payload_kg"] = pl.get("payload_kg", p.get("payload_kg"))
+        for k in ("protective_stop_source", "human_in_reach_envelope"):
+            if k in pl:
+                p[k] = pl[k]
         p["in_zones"] = self._zones_containing(p["ee"]) if p["ee"] else []
         p["in_forbidden_zone"] = next((z for z in p["in_zones"] if self._zone_type(z).startswith("restricted") and self._zone_active(z)), None)
         env = self.twin["environment"]
@@ -191,9 +205,18 @@ class StateEngine:
         self.twin["status"] = "operational" if moving or self.twin["software"]["planner"]["status"] == "active" else "idle"
 
     def _zones_containing(self, ee: dict) -> list[str]:
+        """Zone ids whose volume holds this point.  Most zones are axis-aligned boxes; a
+        reach_envelope is a cylinder about the robot base, so it has a radius instead of min/max."""
         out = []
         for z in self.twin["environment"]["zones"]:
-            lo, hi = z["min"], z["max"]
+            if z.get("type") == "reach_envelope":
+                r, h = z.get("radius"), z.get("height")
+                if r and math.hypot(ee["x"], ee["y"]) <= r and (h is None or 0.0 <= ee["z"] <= h):
+                    out.append(z["id"])
+                continue
+            lo, hi = z.get("min") or [], z.get("max") or []
+            if len(lo) < 3 or len(hi) < 3:
+                continue
             if lo[0] <= ee["x"] <= hi[0] and lo[1] <= ee["y"] <= hi[1] and lo[2] <= ee["z"] <= hi[2]:
                 out.append(z["id"])
         return out

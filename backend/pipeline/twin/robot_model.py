@@ -31,6 +31,7 @@ def new_robot_twin(robot_id: str, identity: dict, environment: dict) -> dict[str
             "ee": None, "ee_speed": 0.0, "gripper": None, "payload_kg": None,
             "collision": False, "collision_with": None, "in_forbidden_zone": None, "in_zones": [],
             "protective_stop": False, "human_in_scanner_field": False,
+            "protective_stop_source": None, "human_in_reach_envelope": False,
             "source": None, "ts": None,
         },
         "software_belief": {"position": [0.0] * n, "velocity": [0.0] * n, "effort": [0.0] * n, "ee": None, "source": None, "ts": None},
@@ -48,7 +49,8 @@ def new_robot_twin(robot_id: str, identity: dict, environment: dict) -> dict[str
             "last_machine_command": None,
         },
         "task": {"scenario": environment.get("scenario"), "step": None, "index": None, "action": None, "started_ts": None,
-                 "duration_s": None, "timeout_s": None, "status": "idle", "completed": [], "last_failure": None},
+                 "duration_s": None, "timeout_s": None, "status": "idle", "completed": [], "last_failure": None,
+                 "cycles_done": 0, "cycles_target": None, "run_done": False, "finished_ts": None},
         "machine": ({"id": environment["machine"].get("id"), "state": None, "door": None, "chuck": None, "alarm": None,
                      "cycle_count": None, "part_loaded": None, "cycle_progress": 0.0, "last_command": None, "last_interlock": None,
                      "allowed_clients": environment["machine"].get("allowed_clients", []), "ts": None}

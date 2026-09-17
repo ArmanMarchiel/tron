@@ -59,7 +59,7 @@ def protective_stop_not_issued(twin: dict, cfg: dict) -> Hit | None:
     if ts > due and moving and not p.get("protective_stop"):
         return Hit("PROTECTIVE_STOP_NOT_ISSUED", "CRITICAL", "safety",
                    f"Scanner intrusion was sensed {ts - (due - 0.5):.1f} s ago but the controller has not stopped (peak joint speed {max(abs(v) for v in p['velocity']):.2f} rad/s)",
-                   {"sensed_since": twin["sensors"]["area_scanner"].get("since"), "stop_required_by": due, "controller_state": twin["software"]["controller"].get("state"),
+                   {"sensed_since": (twin["sensors"].get("area_scanner") or {}).get("since"), "stop_required_by": due, "controller_state": twin["software"]["controller"].get("state"),
                     "tcp_speed": p["ee_speed"], "human_distance": twin["environment"]["nearest_human_distance"]}, "SafetyThresholdExceeded")
     return None
 

@@ -15,6 +15,7 @@
   <div class="hdr-pickers">
     <select id="pick-robot" class="picker" title="Robot"></select>
     <select id="pick-scenario" class="picker" title="Scenario"></select>
+    <select id="pick-machine" class="picker" title="Machine tool"></select>
     <button id="btn-apply" class="small">Load cell</button>
     <span id="session-info" class="dim"></span>
   </div>
@@ -33,8 +34,7 @@
       <div class="simwrap" id="simwrap"><img id="simview" alt="MuJoCo render" src="/api/sim/stream?view=environment" draggable="false">
         <div class="viz-controls" id="viz-controls"><button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button><button id="cam-reset" title="Reset view">⟲</button></div>
         <div class="viz-hint" id="viz-hint">drag to orbit · scroll to zoom</div></div>
-      <div id="joint-bars" class="joint-bars"></div>
-      <div class="legend"><span><i class="sw robot"></i>actual joint angle</span><span><i class="sw expected"></i>expected joint angle</span><span class="dim">bars span each joint's range</span></div>
+      <div class="overlay-toggles" id="overlay-toggles"></div>
     </div>
   </section>
 
@@ -42,15 +42,13 @@
     <nav class="tabs" id="tabs">
       <button data-tab="state" class="active">State</button>
       <button data-tab="timeseries">Time Series</button>
-      <button data-tab="incidents">Incidents</button>
       <button data-tab="runtime">Runtime</button>
       <button data-tab="events">Events</button>
-      <button data-tab="scenario">Scenario</button>
+      <button data-tab="scenario">Task</button>
     </nav>
     <div class="tab-pages">
       <div class="tab-page active" data-page="state"><div id="status-line" class="status-line"></div><div id="robot-state"></div></div>
       <div class="tab-page" data-page="timeseries"><div id="timeline"></div><div id="expected-actual" class="ts-table"></div></div>
-      <div class="tab-page" data-page="incidents"><div id="incident-list"></div><div id="incident-detail"></div></div>
       <div class="tab-page" data-page="runtime"><div id="software-panel"></div></div>
       <div class="tab-page" data-page="events"><div id="event-feed"></div></div>
       <div class="tab-page" data-page="scenario"><div id="task-panel"></div><div id="scenarios"></div><div id="scenario-editor"></div></div>
