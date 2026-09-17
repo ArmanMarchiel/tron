@@ -1,0 +1,10 @@
+# runtime output: the image gets an empty backend/data, the compose volume supplies the real one
+backend/data
+# the collector is built in a ROS 2 workspace, not in the platform image
+backend/ros2
+.venv
+.git
+.pytest_cache
+**/__pycache__
+tests
+docs

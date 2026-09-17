@@ -1,0 +1,45 @@
+id: pick_place
+name: Pick and place (bench)
+description: Phase 1 cycle on a bench with one obstacle; no machine. Useful for robot bring-up.
+targets:
+  above_pick: [0.55, -0.35, 0.30]
+  pick:       [0.55, -0.35, 0.03]
+  lift:       [0.55, -0.35, 0.42]
+  above_place: [0.55, 0.35, 0.42]
+  place:      [0.55, 0.35, 0.05]
+  rogue:      [0.30, 0.72, 0.45]
+  obstacle:   [0.55, 0.00, 0.11]
+  obstacle_retreat: [0.55, 0.0, 0.50]
+trays:
+  - {id: bench, pose: [0.55, 0.0, -0.01]}
+blocks:
+  - {id: obstacle-1, pose: [0.55, 0.0, 0.12], size: 0.07, mass: 5.0}
+  - {id: block-1, pose: [0.55, -0.35, 0.03], size: 0.03, mass: 0.5}
+human:
+  pose: [0.35, 1.3, 0.2]
+  behaviour: operator_patrol
+  patrol: [[0.35, 1.3], [0.9, 1.3]]
+  speed: 0.3
+zones:
+  - {id: restricted-1, type: restricted, min: [0.0, 0.55, 0.0], max: [0.5, 0.95, 0.7]}
+  - {id: operator_side, type: ssm, min: [-0.5, 0.6, 0.0], max: [1.5, 1.6, 2.0], min_separation: 0.45}
+sensors:
+  - {id: scanner-1, type: area_scanner, field_min: [-0.3, 0.55, 0.0], field_max: [1.3, 1.1, 0.0]}
+task:
+  loop: true
+  steps:
+    - {id: home,        action: move, target: home, gripper: open, duration_s: 4}
+    - {id: above_pick,  action: move, target: above_pick, duration_s: 4}
+    - {id: pick,        action: move, target: pick, duration_s: 3}
+    - {id: grasp,       action: gripper, gripper: closed, duration_s: 1}
+    - {id: lift,        action: move, target: lift, duration_s: 3}
+    - {id: above_place, action: move, target: above_place, duration_s: 4}
+    - {id: place,       action: move, target: place, duration_s: 3}
+    - {id: release,     action: gripper, gripper: open, duration_s: 1}
+    - {id: retreat,     action: move, target: above_place, duration_s: 3}
+faults:
+  A: {name: Excessive velocity, expected_detection: JOINT_VELOCITY_LIMIT_EXCEEDED, description: "Controller executes trajectories 2.5x faster than commanded.", params: {speed_factor: 2.5}, duration_s: 10}
+  B: {name: Unexpected command source, expected_detection: UNEXPECTED_COMMAND_SOURCE, description: "A rogue node publishes a trajectory that swings the arm toward the operator.", params: {rogue_node: /teleop_override, goal: rogue, rate_hz: 10, duration_s: 2.0}, duration_s: 9}
+  C: {name: Sensor disagreement, expected_detection: SENSOR_STATE_DIVERGENCE, description: "joint 2 encoder reports +0.25 rad relative to the physical joint.", params: {encoder_offset: {joint: 1, rad: 0.25}}, duration_s: 10}
+  D: {name: Trajectory deviation, expected_detection: TRAJECTORY_DIVERGENCE, description: "Joints 2 and 4 lose 95% of position gain; the arm sags under gravity.", params: {actuator_gain_scale: 0.05, joints: [1, 3]}, duration_s: 10}
+  E: {name: Collision, expected_detection: COLLISION_EVENT, description: "Planner goal inside the obstacle with the collision check disabled.", params: {goal: obstacle, disable_collision_check: true}, duration_s: 12}

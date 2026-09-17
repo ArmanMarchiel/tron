@@ -1,0 +1,56 @@
+<mujoco model="tron manipulator cell">
+  <compiler angle="radian" meshdir="franka_emika_panda/assets" autolimits="true"/>
+  <include file="franka_emika_panda/panda_tron.xml"/>
+  <option timestep="0.002" integrator="implicitfast"/>
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.4 0.4 0.4" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.9 0.92 0.95 1"/>
+    <global azimuth="140" elevation="-25" offwidth="960" offheight="640"/>
+    <quality shadowsize="4096"/>
+  </visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.93 0.95 0.98" rgb2="0.75 0.8 0.88" width="512" height="3072"/>
+    <texture type="2d" name="floor_tex" builtin="checker" mark="edge" rgb1="0.82 0.84 0.87" rgb2="0.72 0.75 0.79" markrgb="0.9 0.9 0.9" width="300" height="300"/>
+    <material name="floor_mat" texture="floor_tex" texuniform="true" texrepeat="6 6" reflectance="0.1"/>
+    <material name="table_mat" rgba="0.55 0.45 0.35 1"/>
+    <material name="obstacle_mat" rgba="0.35 0.38 0.45 1"/>
+    <material name="human_mat" rgba="0.95 0.65 0.3 1"/>
+    <material name="zone_mat" rgba="0.9 0.2 0.2 0.18"/>
+    <material name="target_mat" rgba="0.2 0.7 0.3 0.6"/>
+  </asset>
+  <worldbody>
+    <light pos="0.5 0.5 2.0" dir="-0.3 -0.3 -1" directional="true" castshadow="true"/>
+    <light pos="-1 1 1.5" dir="0.5 -0.5 -1" directional="false" diffuse="0.4 0.4 0.4"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="floor_mat" pos="0 0 -0.75"/>
+    <geom name="pedestal" type="cylinder" size="0.12 0.375" pos="0 0 -0.375" rgba="0.5 0.52 0.56 1"/>
+    <body name="cam_target" pos="0.42 0.12 0.22"/>
+    <camera name="twin_cam" pos="1.55 -1.25 0.85" mode="targetbody" target="cam_target" fovy="40"/>
+    <camera name="top_cam" pos="0.3 0 2.2" xyaxes="0 1 0 -1 0 0" fovy="55"/>
+    <!-- work table in front of the robot base -->
+    <body name="table" pos="0.55 0 -0.4">
+      <geom name="table_top" type="box" size="0.45 0.6 0.02" pos="0 0 0.38" material="table_mat"/>
+      <geom name="table_leg1" type="box" size="0.02 0.02 0.36" pos="0.4 0.55 0" material="table_mat"/>
+      <geom name="table_leg2" type="box" size="0.02 0.02 0.36" pos="-0.4 0.55 0" material="table_mat"/>
+      <geom name="table_leg3" type="box" size="0.02 0.02 0.36" pos="0.4 -0.55 0" material="table_mat"/>
+      <geom name="table_leg4" type="box" size="0.02 0.02 0.36" pos="-0.4 -0.55 0" material="table_mat"/>
+    </body>
+    <!-- fixed obstacle on the table -->
+    <body name="obstacle-1" pos="0.55 0.0 0.12">
+      <geom name="obstacle-1" type="box" size="0.07 0.07 0.12" material="obstacle_mat"/>
+    </body>
+    <!-- pick / place markers (visual only) -->
+    <geom name="pick_marker" type="cylinder" size="0.05 0.002" pos="0.55 -0.35 0.002" material="target_mat" contype="0" conaffinity="0"/>
+    <geom name="place_marker" type="cylinder" size="0.05 0.002" pos="0.55 0.35 0.002" material="target_mat" contype="0" conaffinity="0"/>
+    <!-- restricted zone: volume beside the human (visual only, no contact) -->
+    <geom name="restricted-1" type="box" size="0.25 0.2 0.35" pos="0.25 0.75 0.35" material="zone_mat" contype="0" conaffinity="0"/>
+    <!-- human proxy: mocap body so the adapter can move it -->
+    <body name="human-1" mocap="true" pos="0.35 1.05 0.15">
+      <geom name="human_body" type="capsule" size="0.16 0.45" material="human_mat" contype="0" conaffinity="0"/>
+      <geom name="human_head" type="sphere" size="0.11" pos="0 0 0.7" material="human_mat" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+  <sensor>
+    <framepos name="ee_pos" objtype="site" objname="ee_site"/>
+    <framelinvel name="ee_vel" objtype="site" objname="ee_site"/>
+  </sensor>
+</mujoco>

@@ -1,0 +1,15 @@
+services:
+  tron:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      TRON_ROBOT: ${TRON_ROBOT:-franka_panda}
+      TRON_SCENARIO: ${TRON_SCENARIO:-cnc_tending}
+      TRON_ADAPTER: ${TRON_ADAPTER:-mujoco}      # external: no simulator, wait for collectors / replay
+      TRON_API_TOKENS: ${TRON_API_TOKENS:-}      # e.g. "collector:abc123,operator:def456"
+    volumes:
+      - tron-data:/app/backend/data
+      - ./backend/conf/scenarios/defs:/app/backend/conf/scenarios/defs
+      - ./backend/conf/cells:/app/backend/conf/cells
+volumes:
+  tron-data:

@@ -1,0 +1,15 @@
+# Cell configuration (config as code). Binds a robot, a scenario and platform overrides; select with
+# TRON_CELL=lab_cell_1 (or POST /api/session). Everything the UI edits is written back to files so a
+# validation setup is reviewable in git.
+id: lab_cell_1
+name: Validation lab, cell 1
+robot: franka_panda
+scenario: cnc_tending
+adapter: mujoco
+safety_overrides:
+  max_joint_velocity: 1.0
+  human_safety_distance_m: 0.35
+security_baseline: null          # path of a captured baseline YAML (backend/data/baselines/*.yaml) to apply, or null
+retention:
+  snapshot_seconds: 3600
+  events_days: 30

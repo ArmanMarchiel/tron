@@ -1,0 +1,25 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1-mesa-dri
+      - run: pip install -r requirements.txt
+      - run: MUJOCO_GL=osmesa python -m pytest -q tests
+  ros2-collector:
+    runs-on: ubuntu-latest
+    container: ros:jazzy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and import the collector package
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          apt-get update && apt-get install -y ros-jazzy-trajectory-msgs ros-jazzy-control-msgs python3-colcon-common-extensions
+          mkdir -p ws/src && cp -r backend/io/ros2/tron_ros2_collector ws/src/
+          cd ws && colcon build --packages-select tron_ros2_collector
+          source install/setup.bash && python3 -c "import tron_ros2_collector.collector, tron_ros2_collector.rogue_publisher; print('collector imports ok')"

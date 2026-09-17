@@ -1,0 +1,52 @@
+<!-- Articulated capsule operator: pelvis (mocap root), torso, head, two arms (shoulder, elbow), two legs
+     (hip, knee). Kinematic: the adapter sets the root pose and joint angles every step. Geoms are
+     non-colliding (contype/conaffinity 0) so the physics never pushes the arm; distances are still
+     measured geometrically with mj_geomDistance. -->
+<body name="human-1" mocap="true" pos="__POS__">
+  <geom name="hum_pelvis" type="capsule" size="0.11 0.08" quat="0.7071 0 0.7071 0" material="human_mat" contype="0" conaffinity="0"/>
+  <body name="hum_torso" pos="0 0 0.12">
+    <joint name="hum_spine" axis="0 1 0" range="-0.6 0.6"/>
+    <geom name="hum_chest" type="capsule" size="0.12 0.16" pos="0 0 0.2" material="human_shirt" contype="0" conaffinity="0"/>
+    <body name="hum_head" pos="0 0 0.5">
+      <geom name="hum_neck" type="capsule" size="0.05 0.03" pos="0 0 -0.04" material="human_mat" contype="0" conaffinity="0"/>
+      <geom name="hum_head_geom" type="sphere" size="0.11" pos="0 0 0.08" material="human_mat" contype="0" conaffinity="0"/>
+      <geom name="hum_helmet" type="sphere" size="0.115" pos="0 0 0.1" material="human_helmet" contype="0" conaffinity="0"/>
+    </body>
+    <body name="hum_uarm_l" pos="0 0.2 0.36">
+      <joint name="hum_shoulder_l" axis="0 1 0" range="-3.0 3.0"/>
+      <geom name="hum_uarm_l_geom" type="capsule" size="0.045 0.14" pos="0 0.02 -0.15" material="human_shirt" contype="0" conaffinity="0"/>
+      <body name="hum_farm_l" pos="0 0.02 -0.31">
+        <joint name="hum_elbow_l" axis="0 1 0" range="-2.5 0.0"/>
+        <geom name="hum_farm_l_geom" type="capsule" size="0.04 0.13" pos="0 0 -0.13" material="human_mat" contype="0" conaffinity="0"/>
+        <geom name="hum_hand_l" type="sphere" size="0.045" pos="0 0 -0.29" material="human_mat" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+    <body name="hum_uarm_r" pos="0 -0.2 0.36">
+      <joint name="hum_shoulder_r" axis="0 1 0" range="-3.0 3.0"/>
+      <geom name="hum_uarm_r_geom" type="capsule" size="0.045 0.14" pos="0 -0.02 -0.15" material="human_shirt" contype="0" conaffinity="0"/>
+      <body name="hum_farm_r" pos="0 -0.02 -0.31">
+        <joint name="hum_elbow_r" axis="0 1 0" range="-2.5 0.0"/>
+        <geom name="hum_farm_r_geom" type="capsule" size="0.04 0.13" pos="0 0 -0.13" material="human_mat" contype="0" conaffinity="0"/>
+        <geom name="hum_hand_r" type="sphere" size="0.045" pos="0 0 -0.29" material="human_mat" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </body>
+  <body name="hum_thigh_l" pos="0 0.1 -0.05">
+    <joint name="hum_hip_l" axis="0 1 0" range="-1.5 1.5"/>
+    <geom name="hum_thigh_l_geom" type="capsule" size="0.065 0.2" pos="0 0 -0.22" material="human_trousers" contype="0" conaffinity="0"/>
+    <body name="hum_shin_l" pos="0 0 -0.44">
+      <joint name="hum_knee_l" axis="0 1 0" range="0 2.2"/>
+      <geom name="hum_shin_l_geom" type="capsule" size="0.05 0.2" pos="0 0 -0.21" material="human_trousers" contype="0" conaffinity="0"/>
+      <geom name="hum_foot_l" type="box" size="0.11 0.05 0.03" pos="0.04 0 -0.44" material="human_helmet" contype="0" conaffinity="0"/>
+    </body>
+  </body>
+  <body name="hum_thigh_r" pos="0 -0.1 -0.05">
+    <joint name="hum_hip_r" axis="0 1 0" range="-1.5 1.5"/>
+    <geom name="hum_thigh_r_geom" type="capsule" size="0.065 0.2" pos="0 0 -0.22" material="human_trousers" contype="0" conaffinity="0"/>
+    <body name="hum_shin_r" pos="0 0 -0.44">
+      <joint name="hum_knee_r" axis="0 1 0" range="0 2.2"/>
+      <geom name="hum_shin_r_geom" type="capsule" size="0.05 0.2" pos="0 0 -0.21" material="human_trousers" contype="0" conaffinity="0"/>
+      <geom name="hum_foot_r" type="box" size="0.11 0.05 0.03" pos="0.04 0 -0.44" material="human_helmet" contype="0" conaffinity="0"/>
+    </body>
+  </body>
+</body>

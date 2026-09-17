@@ -1,0 +1,20 @@
+# ---- runtime output (regenerated on startup; session DBs reach hundreds of MB) ----
+backend/data/
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- ROS 2 colcon workspace artifacts ----
+build/
+install/
+log/
+
+# ---- os / editor ----
+.DS_Store
+.idea/
+*.swp

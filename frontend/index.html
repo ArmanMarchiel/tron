@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TRON Twin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header id="header">
+  <div class="brand">TRON</div>
+  <div class="hdr-pickers">
+    <select id="pick-robot" class="picker" title="Robot"></select>
+    <select id="pick-scenario" class="picker" title="Scenario"></select>
+    <button id="btn-apply" class="small">Load cell</button>
+    <span id="session-info" class="dim"></span>
+  </div>
+  <div class="spacer"></div>
+  <div id="hdr-risk" class="risk-badge">RISK: —</div>
+</header>
+
+<div id="history-banner" class="hidden">
+  Viewing historical state at <b id="history-ts"></b> — <button id="btn-live">Return to live</button>
+</div>
+
+<main>
+  <section class="viz">
+    <div class="panel viz-panel">
+      <div class="viz-tabs" id="viz-tabs"></div>
+      <div class="simwrap" id="simwrap"><img id="simview" alt="MuJoCo render" src="/api/sim/stream?view=environment" draggable="false">
+        <div class="viz-controls" id="viz-controls"><button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button><button id="cam-reset" title="Reset view">⟲</button></div>
+        <div class="viz-hint" id="viz-hint">drag to orbit · scroll to zoom</div></div>
+      <div id="joint-bars" class="joint-bars"></div>
+      <div class="legend"><span><i class="sw robot"></i>actual joint angle</span><span><i class="sw expected"></i>expected joint angle</span><span class="dim">bars span each joint's range</span></div>
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    <nav class="tabs" id="tabs">
+      <button data-tab="state" class="active">State</button>
+      <button data-tab="timeseries">Time Series</button>
+      <button data-tab="incidents">Incidents</button>
+      <button data-tab="runtime">Runtime</button>
+      <button data-tab="events">Events</button>
+      <button data-tab="scenario">Scenario</button>
+    </nav>
+    <div class="tab-pages">
+      <div class="tab-page active" data-page="state"><div id="status-line" class="status-line"></div><div id="robot-state"></div></div>
+      <div class="tab-page" data-page="timeseries"><div id="timeline"></div><div id="expected-actual" class="ts-table"></div></div>
+      <div class="tab-page" data-page="incidents"><div id="incident-list"></div><div id="incident-detail"></div></div>
+      <div class="tab-page" data-page="runtime"><div id="software-panel"></div></div>
+      <div class="tab-page" data-page="events"><div id="event-feed"></div></div>
+      <div class="tab-page" data-page="scenario"><div id="task-panel"></div><div id="scenarios"></div><div id="scenario-editor"></div></div>
+    </div>
+  </aside>
+</main>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
