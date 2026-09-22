@@ -29,6 +29,11 @@ ASSETS = Path(__file__).resolve().parent.parent / "io" / "sim" / "assets"
 def _up_axis(mesh) -> int:
     """Which axis the machine stands on, found from its own geometry.
 
+    Caution: this is sensitive to tessellation.  Re-importing the VF-2 at ``--tol 0.020`` instead of
+    0.004 flipped the machine 180 degrees about z -- same bounding box, mirrored contents -- because
+    the coarser mesh shifts which faces clear the flatness and height tests below.  Changing ``--tol``
+    on a machine that already looks right means re-checking its orientation, and pinning ``--yaw``.
+
     A machine tool rests on a base plate: a large flat surface at the bottom of the model.  For each
     axis, sum the area of faces whose normal points along it *and* that sit within 120 mm of that
     axis' minimum.  The winner is the base, so that axis is "up".  This beats guessing a rotation,

@@ -43,6 +43,7 @@ class RenderService:
         self._overlay_geoms = self._group_overlays()
         self._overlay_alpha = {g: float(self.m.geom_rgba[g][3]) for ids in self._overlay_geoms.values() for g in ids}
         self.overlays = {k: True for k in self._overlay_geoms}
+        self.shadows = fps <= 15.0        # see set_fps: the shadow pass is about half the frame time
         self._thread = threading.Thread(target=self._loop, name="tron-render", daemon=True)
 
     def _group_overlays(self) -> dict[str, list[int]]:
@@ -117,6 +118,20 @@ class RenderService:
         with self._vlock:
             return list(self._viewers) or [self.camera]
 
+    def set_fps(self, fps: float) -> dict:
+        """Change the render rate while streaming, trading shadows for speed above 15 fps.
+
+        The scene is geometry-bound rather than pixel-bound: a CAD machine shell runs to seven figures
+        of triangles, so a frame costs about the same at any window size.  Measured on this scene, the
+        shadow pass is roughly half the frame time, because it rasterises all that geometry a second
+        time from the light's point of view.  Asking for a higher rate without giving anything back
+        therefore changes nothing -- the renderer is already flat out.  So the rate doubles as a
+        quality dial: 15 keeps shadows, above that drops them, which is what actually buys the frames.
+        """
+        self.fps = max(1.0, min(float(fps), 60.0))
+        self.shadows = self.fps <= 15.0
+        return {"fps": self.fps, "shadows": self.shadows}
+
     def resize(self, width: int, height: int) -> dict:
         """Ask for a different render size, within the model's offscreen framebuffer.
 
@@ -136,9 +151,9 @@ class RenderService:
     def _loop(self) -> None:
         rd = mujoco.MjData(self.m)
         renderer = mujoco.Renderer(self.m, height=self.height, width=self.width)
-        period = 1.0 / self.fps
         next_t = time.perf_counter()
         while not self._stop:
+            period = 1.0 / self.fps          # read each pass: set_fps may change it mid-stream
             if self._resized:                      # the viewport changed shape
                 self._resized = False
                 renderer.close()
@@ -176,6 +191,7 @@ class RenderService:
                 rd.mocap_quat[:] = np.asarray(quat).reshape(rd.mocap_quat.shape)
         mujoco.mj_forward(self.m, rd)
         renderer.update_scene(rd, camera=(self.orbit if camera == self.camera else camera))
+        renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1 if self.shadows else 0
         img = renderer.render()
         buf = io.BytesIO()
         Image.fromarray(img).save(buf, format="JPEG", quality=self.quality)

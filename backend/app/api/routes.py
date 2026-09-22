@@ -51,6 +51,10 @@ class ViewportBody(BaseModel):
     height: int
 
 
+class FpsBody(BaseModel):
+    fps: float
+
+
 class OverlayBody(BaseModel):
     name: str
     visible: bool = True
@@ -305,7 +309,7 @@ def build_router(p: Platform, sessions, auth) -> APIRouter:
                         yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
                     if rd._stop:
                         break
-                    await asyncio.sleep(1.0 / SIM["render_hz"])
+                    await asyncio.sleep(1.0 / max(1.0, rd.fps))
             finally:
                 rd.release(cam)
         return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -344,6 +348,19 @@ def build_router(p: Platform, sessions, auth) -> APIRouter:
         if p.renderer is None:
             raise HTTPException(503, "no in-process simulator")
         return p.renderer.resize(body.width, body.height)
+
+    @r.get("/sim/fps")
+    def sim_fps():
+        if p.renderer is None:
+            raise HTTPException(503, "no in-process simulator")
+        return {"fps": p.renderer.fps, "options": [15, 30, 60]}
+
+    @r.post("/sim/fps")
+    def set_sim_fps(body: FpsBody):
+        """Render rate, chosen by the viewer so a slower machine can trade smoothness for latency."""
+        if p.renderer is None:
+            raise HTTPException(503, "no in-process simulator")
+        return p.renderer.set_fps(body.fps)
 
     @r.get("/sim/overlays")
     def sim_overlays():

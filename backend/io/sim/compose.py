@@ -125,6 +125,35 @@ def cell_bounds(scenario, robot, pad: float = 0.35) -> tuple[float, float, float
     return min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
 
 
+def operator_lane(scenario, robot, clearance: float = 0.55) -> tuple[list[list[float]], list[float]] | None:
+    """The aisle the operator walks: a straight lane just outside the painted cell boundary.
+
+    The scenario authors a patrol, but it is written against one machine.  A machine swap changes the
+    footprint -- the VC-400 with its pallet pool is 6.2 m wide against the VF-2's 2.5 m -- and a lane
+    that cleared the old machine can run straight through the new one.  The operator is a kinematic
+    mocap body, so physics cannot stop it: the lane has to be correct by construction.
+
+    The lane keeps the authored patrol's side and extent, and only pushes it far enough out to clear
+    the cell.  Returns (patrol, pose) or None when there is no machine to clear.
+    """
+    if not (scenario.human and scenario.machine):
+        return None
+    x0, x1, y0, y1 = cell_bounds(scenario, robot)
+    patrol = [list(p) for p in (scenario.human.patrol or [])]
+    if not patrol:
+        return None
+    # which side of the cell was authored?  keep it, and push the lane clear of the boundary
+    authored_y = sum(p[1] for p in patrol) / len(patrol)
+    lane_y = (y1 + clearance) if authored_y >= (y0 + y1) / 2 else (y0 - clearance)
+    if abs(authored_y) >= abs(lane_y):       # the authored lane already clears the cell
+        lane_y = authored_y
+    lane = [[max(x0 - clearance, min(x1 + clearance, p[0])), lane_y] for p in patrol]
+    pose = list(scenario.human.pose)
+    pose[0] = max(x0 - clearance, min(x1 + clearance, pose[0]))
+    pose[1] = lane_y
+    return lane, pose
+
+
 def _scenario_bodies(scenario, robot, floor_z: float = -0.75) -> str:
     """World bodies for the scenario's props (trays, blocks, CNC, human, zones, scanner)."""
     out = [_floor_markings(scenario, robot, floor_z)]
@@ -151,7 +180,8 @@ def _scenario_bodies(scenario, robot, floor_z: float = -0.75) -> str:
         out.append(prof.mjcf_path.read_text().replace("__POS__", f"{x} {y} {z}")
                    .replace("__SHELL_GEOMS__", prof.shell_geoms()))
     if scenario.human:
-        x, y, z = scenario.human.pose
+        lane = operator_lane(scenario, robot)
+        x, y, z = lane[1] if lane else scenario.human.pose
         out.append((ASSETS / "humanoid_operator.xml").read_text().replace("__POS__", f"{x} {y} {z}"))
     for zone in scenario.zones:
         if zone.type == "reach_envelope":

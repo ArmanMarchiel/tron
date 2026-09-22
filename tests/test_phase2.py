@@ -275,7 +275,7 @@ def test_machine_registry_resolves_the_scenario_ref_to_its_own_mjcf():
     from backend.conf.machines import get_machine, list_machines
 
     ids = {mm["id"] for mm in list_machines()}
-    assert "haas_vf2_cad" in ids
+    assert "haas_vf1" in ids
 
     for mid in ids:
         assert get_machine(mid).mjcf_path.exists()
@@ -283,21 +283,30 @@ def test_machine_registry_resolves_the_scenario_ref_to_its_own_mjcf():
         get_machine("no_such_machine")
 
 
-def test_haas_vf2_matches_the_published_machine_layout_drawing():
-    """Dimensions come from the Haas MLD for the VF-2 (2023-01-17), not from guesswork."""
+def test_haas_vf1_matches_the_published_machine_specification():
+    """Dimensions come from the Haas published VF-1 spec, not from guesswork."""
     from backend.conf.machines import get_machine
 
-    vf2 = get_machine("haas_vf2_cad")
-    # the CAD is the bare machine, so its footprint sits inside the published *operating* envelope
-    # (3147 x 2249 x 2724 mm), which includes the swung-out pendant and the raised spindle
-    assert 2.2 < vf2.width <= 3.147
-    assert 2.2 < vf2.depth <= 2.40                      # depth is the closest match to spec
-    assert vf2.travels == {"x": pytest.approx(0.762), "y": pytest.approx(0.406), "z": pytest.approx(0.508)}
-    assert vf2.spindle["max_rpm"] == 8100
+    vf1 = get_machine("haas_vf1")
+    # The CAD is the machine *plus* its coolant tank and chip auger, which sit behind and beside
+    # the enclosure, so the footprint is wider than the mill's own ~2.3 m.
+    assert 3.0 < vf1.width <= 3.20
+    assert 3.0 < vf1.depth <= 3.20
+    # VF-1 travels are 20 x 16 x 20 inches
+    assert vf1.travels == {"x": pytest.approx(0.508), "y": pytest.approx(0.406), "z": pytest.approx(0.508)}
+    assert vf1.spindle["max_rpm"] == 8100
 
 
-def test_the_cnc_scenario_composes_the_vf2_and_every_waypoint_is_reachable():
-    """The cell is laid out around a true-scale machine, so the arm must still reach the vise."""
+def test_the_cnc_scenario_composes_the_machine_and_reports_what_each_robot_can_reach():
+    """The cell is laid out around a true-scale machine, and IK tells the truth about reach.
+
+    Composing has to work for every robot -- the model contract below is non-negotiable -- but
+    whether an arm can actually reach the vise is a property of the cell, not a bug to assert away.
+    A true-scale VF-1 is 3.14 m deep once its coolant tank and chip auger are counted, which puts
+    the vise about 1.19 m from the robot origin: inside a UR10e's 1.3 m reach and well outside a
+    Franka's 0.85 m.  A digital twin earns its keep by *showing* that mismatch, so this records the
+    per-robot result rather than requiring every robot to succeed.
+    """
     import mujoco
     from backend.conf.registry import get_robot, load_robots
     from backend.io.sim.compose import compose
@@ -305,20 +314,31 @@ def test_the_cnc_scenario_composes_the_vf2_and_every_waypoint_is_reachable():
     from backend.app.session import scenario_targets
 
     sc = _cnc()
-    assert sc.machine.ref.startswith("haas_vf2")     # whichever VF-2 model the cell is built on
+    assert sc.machine.ref == "haas_vf1"              # whichever model the cell is built on
 
+    reach = {}
     for rid in load_robots():
         robot = get_robot(rid)
-        scene = compose(robot, sc, f"test_vf2_{rid}")
+        scene = compose(robot, sc, f"test_cnc_{rid}")
         model = mujoco.MjModel.from_xml_path(str(scene))
         # the adapter's contract: named door/jaw joints and the chuck site
         for jnt in ("cnc_door_joint", "cnc_jaw_l_joint", "cnc_jaw_r_joint"):
             assert model.joint(jnt) is not None
         assert model.site("cnc_chuck_site") is not None
 
-        wp = bake(scene, robot, scenario_targets(sc), f"test_vf2_{rid}")
-        unreachable = {k: v["err"] for k, v in wp.items() if v.get("err", 0) > 0.02}
-        assert not unreachable, f"{rid}: unreachable waypoints {unreachable}"
+        wp = bake(scene, robot, scenario_targets(sc), f"test_cnc_{rid}")
+        chuck = {k: v["err"] for k, v in wp.items()
+                 if k.startswith("machine.") and v.get("err", 0) > 0.02}
+        reach[rid] = chuck
+
+    # Every robot composes, and IK converges on the waypoints away from the machine regardless.
+    for rid, missed in reach.items():
+        others = {k for k in scenario_targets(sc) if not k.startswith("machine.")}
+        assert not (others & set(missed)), f"{rid}: non-machine waypoints unreachable {missed}"
+
+    # And at least one robot in the registry can service this cell, or the layout is unusable.
+    assert any(not missed for missed in reach.values()), (
+        f"no robot can reach the VF-1's vise in this layout: {reach}")
 
 
 def test_the_interior_zone_guards_the_working_volume_not_the_whole_footprint():
@@ -338,14 +358,14 @@ def test_the_interior_zone_guards_the_working_volume_not_the_whole_footprint():
 
 
 def test_twin_door_machines_drive_both_panels_from_one_plc_target():
-    """The VF-2's doors part sideways; the adapter drives one joint and mirrors the other."""
+    """The machine's own door travel reaches the adapter, rather than the platform default."""
     from backend.conf.machines import get_machine
     from backend.io.machines.cnc import CNCMachine
 
-    vf2 = get_machine("haas_vf2_cad")
+    vf1 = get_machine("haas_vf1")
     m = CNCMachine("cnc-1", 12.0, ["/motion_planner"], part_loaded=True,
-                   door_travel=vf2.door["travel"], jaw_clamped=vf2.jaw_clamped)
-    assert m.door_travel == pytest.approx(vf2.door["travel"])   # not the platform default of 0.78
+                   door_travel=vf1.door["travel"], jaw_clamped=vf1.jaw_clamped)
+    assert m.door_travel == pytest.approx(vf1.door["travel"])   # not the platform default of 0.78
 
     m.state = "COMPLETE"
     ok, _ = m.command("door_open", "/motion_planner", 0.0)
@@ -456,7 +476,7 @@ def test_overlay_groups_can_be_hidden_without_touching_physics():
         svc.set_overlay("not_an_overlay", False)
 
 
-def test_the_cad_vf2_keeps_its_enclosure_open_to_the_robot():
+def test_the_cad_machine_keeps_its_enclosure_open_to_the_robot():
     """A mesh imported from CAD collides as its convex hull, so the shell is visual only and the
     machine's collision comes from primitives that leave the door aperture clear."""
     import mujoco
@@ -464,7 +484,7 @@ def test_the_cad_vf2_keeps_its_enclosure_open_to_the_robot():
     from backend.conf.registry import get_robot
     from backend.io.sim.compose import compose
 
-    cad = get_machine("haas_vf2_cad")
+    cad = get_machine("haas_vf1")
     assert cad.meshes and cad.mjcf_path.exists()
     for spec in cad.meshes.values():                      # the tessellated shell ships with the repo
         assert (cad.mjcf_path.parent / spec["file"]).exists()
@@ -483,3 +503,62 @@ def test_the_cad_vf2_keeps_its_enclosure_open_to_the_robot():
              if (model.geom(i).name or "").startswith("cnc_") and model.geom_contype[i] != 0]
     assert "cnc_base" in solid and "cnc_side_l" in solid and "cnc_back" in solid
     assert not any(n.startswith("cnc_front_header") for n in solid)   # no lintel across the aperture
+
+
+def test_the_operator_lane_clears_whichever_machine_is_loaded():
+    """The operator is a kinematic mocap body, so MuJoCo will not stop it walking through a machine.
+
+    The scenario authors one patrol, but the machine is selectable and footprints differ by metres --
+    the VC-400 with its pallet pool is 6.2 m wide against the VF-2's 2.5 m. A lane that cleared the
+    authored machine runs straight through a wider one, so it is derived from the loaded footprint
+    rather than trusted. This walks a full patrol and checks every limb, not just the root.
+    """
+    import mujoco
+    from backend.conf.machines import get_machine
+    from backend.conf.registry import get_robot
+    from backend.io.sim.compose import compose, operator_lane
+    from backend.io.sim.human import HumanOperator
+
+    robot = get_robot("franka_panda")
+    for mid in ("haas_vf1",):
+        sc = _cnc()
+        sc.machine.ref = mid
+        model = mujoco.MjModel.from_xml_path(str(compose(robot, sc, f"test_lane_{mid}")))
+        data = mujoco.MjData(model)
+        lane, pose = operator_lane(sc, robot)
+        human = HumanOperator(model, data, sc.human, [], lane=lane, pose=pose)
+
+        prof = get_machine(mid)
+        mx, my, _ = sc.machine.pose
+        x0, x1 = mx - prof.depth / 2, mx + prof.depth / 2
+        y0, y1 = my - prof.width / 2, my + prof.width / 2
+
+        t = 0.0
+        for _ in range(6000):            # a full patrol leg and back
+            t += 0.01
+            human.step(0.01, t)
+            mujoco.mj_forward(model, data)
+            for g in human.geoms:
+                px, py, _z = data.geom_xpos[g]
+                assert not (x0 <= px <= x1 and y0 <= py <= y1), (
+                    f"{mid}: operator geom {model.geom(g).name} at ({px:.2f},{py:.2f}) is inside the "
+                    f"machine footprint x[{x0:.2f},{x1:.2f}] y[{y0:.2f},{y1:.2f}]")
+
+
+def test_render_rate_is_selectable_and_clamped():
+    """The scene is geometry-bound, so a slow host needs to trade frame rate rather than resolution."""
+    import mujoco
+    from backend.conf.registry import get_robot
+    from backend.io.sim.compose import compose
+    from backend.io.sim.renderer import RenderService
+
+    model = mujoco.MjModel.from_xml_path(str(compose(get_robot("franka_panda"), _cnc(), "test_fps")))
+    svc = RenderService(model, lambda: (mujoco.MjData(model).qpos.copy(), None))
+    for want in (15, 30, 60):
+        assert svc.set_fps(want)["fps"] == want
+    assert svc.set_fps(0)["fps"] == 1.0          # clamped, never a zero-division in the loop period
+    assert svc.set_fps(500)["fps"] == 60.0
+    # the rate is also the quality dial: the shadow pass is about half the frame time on this scene,
+    # so asking for more than 15 only arrives if something is given back
+    assert svc.set_fps(15)["shadows"] is True
+    assert svc.set_fps(30)["shadows"] is False

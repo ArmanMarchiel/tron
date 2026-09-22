@@ -25,7 +25,8 @@ def _yaw_quat(yaw: float) -> np.ndarray:
 
 
 class HumanOperator:
-    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, spec, scanner_fields: list[tuple[list, list]]):
+    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, spec, scanner_fields: list[tuple[list, list]],
+                 lane: list[list[float]] | None = None, pose: list[float] | None = None):
         self.m, self.d = model, data
         self.id = spec.id
         self.mocap = model.body("human-1").mocapid[0]
@@ -34,11 +35,13 @@ class HumanOperator:
         self.dadr = {j: model.jnt_dofadr[model.joint(j).id] for j in JOINTS}
         self.geoms = [g for g in range(model.ngeom) if model.geom(g).name.startswith("hum_")]
         self.foot_l, self.foot_r = model.geom("hum_foot_l").id, model.geom("hum_foot_r").id
-        self.z = spec.pose[2]
-        self.x, self.y = spec.pose[0], spec.pose[1]
+        start = pose or spec.pose
+        self.z = start[2]
+        self.x, self.y = start[0], start[1]
         self.yaw = 0.0
         self.speed = spec.speed
-        self.patrol = [list(p) for p in (spec.patrol or [[spec.pose[0], spec.pose[1]]])]
+        # the lane is derived from the loaded machine's footprint; the authored patrol is the fallback
+        self.patrol = [list(p) for p in (lane or spec.patrol or [[start[0], start[1]]])]
         self.fields = scanner_fields
         self.behaviour = spec.behaviour
         self._wp = 1 % max(1, len(self.patrol))

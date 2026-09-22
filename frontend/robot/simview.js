@@ -73,6 +73,27 @@ export async function refreshOverlays() {
     fetch("/api/sim/overlays", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: cb.dataset.overlay, visible: cb.checked }) }).catch(() => {});
   });
+  await addFpsPicker(el);
+}
+
+// The scene is geometry-bound (a CAD machine shell runs to seven figures of triangles), so a frame
+// costs the same whatever the window size. When the host cannot hold the rate the stream stutters;
+// dropping the rate trades smoothness for frames that arrive on time.
+async function addFpsPicker(el) {
+  let cur = 15, opts = [15, 30, 60];
+  try { const s = await fetch("/api/sim/fps").then(r => r.json()); cur = s.fps; opts = s.options || opts; }
+  catch (e) { return; }
+  const wrap = document.createElement("span");
+  wrap.className = "ov-fps";
+  wrap.innerHTML = `<span class="ov-title">FPS</span><select title="15 keeps shadows; above that drops them, which is what buys the frames">` +
+    opts.map(o => `<option value="${o}"${o === Math.round(cur) ? " selected" : ""}>${o}</option>`).join("") + `</select>`;
+  wrap.querySelector("select").onchange = (e) => {
+    fetch("/api/sim/fps", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fps: Number(e.target.value) }) })
+      .then(() => applySrc())        // reconnect so the stream picks up the new rate immediately
+      .catch(() => {});
+  };
+  el.appendChild(wrap);
 }
 
 function updateControls() {

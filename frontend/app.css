@@ -134,3 +134,7 @@ h4 { margin:12px 0 4px; font-size:11px; color:var(--dim); letter-spacing:1px; te
 .overlay-toggles label { display:flex; align-items:center; gap:5px; font-size:12px; cursor:pointer; white-space:nowrap; }
 .overlay-toggles input { margin:0; cursor:pointer; accent-color:#2f7fd4; }
 .overlay-toggles i.sw { width:10px; height:10px; display:inline-block; }
+/* render rate sits at the far right of the same row, away from the wrapping zone checkboxes */
+.overlay-toggles .ov-fps { display:flex; align-items:center; gap:5px; margin-left:auto; }
+.overlay-toggles .ov-fps select { font:inherit; font-size:12px; padding:2px 4px; border:1px solid var(--line);
+  background:#fff; color:var(--fg); cursor:pointer; }

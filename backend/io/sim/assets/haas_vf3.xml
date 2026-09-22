@@ -1,0 +1,62 @@
+<!-- Haas VF-3 SS vertical machining centre, from the manufacturer CAD (VF-3_SS_STEP__2_2023.STEP) tessellated per solid by
+     backend/scripts/cad_step.py.
+
+     The CAD shell is the *visual* geometry only.  MuJoCo collides every mesh as its convex hull, so
+     the hollow enclosure would become a solid block the robot could never reach into; collision
+     comes from the primitive boxes below, which leave the door aperture open.
+
+       footprint   2.717 deep (x) x 4.262 wide (y) x 3.098 high (z), origin centred in plan, base z=0
+       front face  x = -1.358   (the door side, facing the robot; imported with --yaw 270)
+       table top   z = 0.900
+
+     The CAD is the machine plus its coolant tank and chip conveyor, which sit behind and beside the
+     enclosure, so the bounding footprint is wider than the mill itself.  The collision boxes below
+     wrap the *enclosure*, which is what the robot has to reach into and around.
+
+     __POS__ is the machine origin at floor level.  Contract: cnc_door_joint, cnc_jaw_l/r_joint,
+     cnc_chuck_site.  Structural geoms use contype 4 / conaffinity 3 so the machine never collides
+     with itself but still blocks the robot (1) and parts (2). -->
+<body name="cnc_machine" pos="__POS__">
+
+  <!-- ============ visual: the CAD shell, one mesh per colour in the source model ============ -->
+__SHELL_GEOMS__
+
+  <!-- ============ collision: primitives that keep the working volume open ============ -->
+  <geom name="cnc_base" type="box" size="1.358 1.494 0.405" pos="0 0 0.405" material="haas_base" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_side_l" type="box" size="1.358 0.06 0.645" pos="0 1.494 1.455" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_side_r" type="box" size="1.358 0.06 0.645" pos="0 -1.494 1.455" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_back" type="box" size="0.06 1.494 0.645" pos="1.298 0 1.455" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_roof" type="box" size="1.358 1.494 0.05" pos="0 0 2.100" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <!-- front pillars flanking the 1.00 m door opening -->
+  <geom name="cnc_front_pillar_l" type="box" size="0.06 0.497 0.645" pos="-1.298 0.997 1.455" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_front_pillar_r" type="box" size="0.06 0.497 0.645" pos="-1.298 -0.997 1.455" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_front_sill" type="box" size="0.06 1.494 0.06" pos="-1.298 0 0.850" material="haas_panel" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_chip_pan" type="box" size="1.195 1.374 0.03" pos="0 0 0.820" material="haas_chip" contype="4" conaffinity="3" group="3"/>
+  <geom name="cnc_column" type="box" size="0.407 0.687 0.593" pos="0.842 0 1.485" material="haas_shell" contype="4" conaffinity="3" group="3"/>
+
+  <!-- ============ table and vise ============ -->
+  <geom name="cnc_table" type="box" size="0.310 0.160 0.03" pos="-0.462 0 0.870" material="cnc_bed" contype="4" conaffinity="3" group="3"/>
+
+  <body name="cnc_chuck" pos="-0.489 0 0.930">
+    <geom name="cnc_vise_body" type="box" size="0.13 0.12 0.05" pos="0 0 0" material="cnc_chuck" contype="4" conaffinity="3"/>
+    <body name="cnc_jaw_l" pos="0 0.115 0.075">
+      <joint name="cnc_jaw_l_joint" type="slide" axis="0 -1 0" range="0 0.055" damping="40"/>
+      <geom name="cnc_jaw_l_geom" type="box" size="0.085 0.022 0.045" material="cnc_jaw" contype="4" conaffinity="3"/>
+    </body>
+    <body name="cnc_jaw_r" pos="0 -0.115 0.075">
+      <joint name="cnc_jaw_r_joint" type="slide" axis="0 1 0" range="0 0.055" damping="40"/>
+      <geom name="cnc_jaw_r_geom" type="box" size="0.085 0.022 0.045" material="cnc_jaw" contype="4" conaffinity="3"/>
+    </body>
+  </body>
+
+  <!-- ============ door ============
+       The CAD shell draws the machine's own door; this invisible slab carries the collision and the
+       PLC's position state, and slides clear when the door opens. -->
+  <body name="cnc_door" pos="-1.298 0 1.415">
+    <joint name="cnc_door_joint" type="slide" axis="0 -1 0" range="0 1.00" damping="60"/>
+    <geom name="cnc_door_panel" type="box" size="0.02 0.500 0.464" material="haas_glass"
+          contype="4" conaffinity="3" rgba="0 0 0 0"/>
+  </body>
+
+  <site name="cnc_chuck_site" pos="-0.489 0 1.012" size="0.006" rgba="0 0 0 0"/>
+</body>

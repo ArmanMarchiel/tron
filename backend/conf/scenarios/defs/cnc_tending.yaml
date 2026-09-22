@@ -16,10 +16,14 @@ blocks:
   - {id: part-0, pose: [0.742, 0.0, -0.108], size: 0.028, height: 0.032, mass: 0.5, finished: true, shape: cylinder}
 machine:
   id: cnc-1
-  ref: haas_vf2_cad              # backend/conf/machines/machines.yaml (manufacturer CAD)
-  pose: [1.3620, 0.0, -1.05]     # origin at floor level; front face 0.2 m from the robot riser
+  ref: haas_vf1                  # backend/conf/machines/machines.yaml (manufacturer CAD)
+  # Origin at floor level, x set so the front face keeps the same 0.2 m clearance from the robot
+  # riser as before: the VF-1's front_offset is -1.568 (its CAD includes the coolant tank and chip
+  # auger), against the VF-2's -1.162, so the machine sits further back than that model did.
+  pose: [1.7680, 0.0, -1.05]
   cycle_time_s: 12
-  chuck_offset: [-0.62, 0.0, 0.942]  # vise on the CAD table, inside the door
+  chuck_offset: [-0.56, 0.0, 0.942]  # vise on the CAD table, inside the door (VF-1 table is
+                                     # smaller than the VF-2's, so the vise sits 60 mm further in)
   protocol: simulated
   allowed_clients: [/motion_planner, cell_plc]
 human:

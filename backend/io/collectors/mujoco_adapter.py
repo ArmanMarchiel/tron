@@ -26,6 +26,7 @@ from backend.pipeline.events.event_model import EventType, make_event
 from backend.conf.machines import get_machine
 from backend.io.machines.cnc import DOOR_OPEN_POS, CNCMachine
 from backend.conf.registry import RobotProfile
+from backend.io.sim.compose import operator_lane
 from backend.io.sim.human import HumanOperator
 from backend.io.collectors.base import Ingest
 from backend.io.collectors.machine_adapter import MachineAdapter
@@ -129,7 +130,12 @@ class MujocoAdapter:
             self.chuck_pos = np.array(scenario.machine.pose) + np.array(scenario.machine.chuck_offset)
         fields = [(s.field_min, s.field_max) for s in scenario.sensors if s.type == "area_scanner"]
         self.scanner = next((s for s in scenario.sensors if s.type == "area_scanner"), None)
-        self.human = HumanOperator(self.m, self.d, scenario.human, fields) if scenario.human else None
+        # the walk lane is derived from the loaded machine's footprint, so a machine swap cannot leave
+        # the operator walking through the enclosure (it is a mocap body; physics will not stop it)
+        lane = operator_lane(scenario, robot) if scenario.human else None
+        self.human = (HumanOperator(self.m, self.d, scenario.human, fields,
+                                    lane=lane[0] if lane else None, pose=lane[1] if lane else None)
+                      if scenario.human else None)
         # controller / planner state
         self.traj: dict | None = None
         self.speed_factor = 1.0
